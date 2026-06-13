@@ -30,6 +30,11 @@ billing/admin surface, but that should be explicitly designed and permissioned.
 - [x] Verify booking billing triggers exist:
   - `booking_service_terms_snapshot`
   - `booking_fee_after_completion`
+- [x] Align admin visual system with the Pieraksts app and website.
+- [x] Use Pieraksts typography:
+  - Manrope for display and headings.
+  - Inter for body text.
+- [x] Use Phosphor icons for admin UI components and dashboard actions.
 - [ ] Connect `pieraksts-admin` to Supabase from server-only code.
 - [ ] Build read-only salon list from real Supabase data.
 - [ ] Build read-only salon detail page.
