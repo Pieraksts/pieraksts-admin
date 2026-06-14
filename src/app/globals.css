@@ -8,7 +8,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter);
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-mono: var(--font-geist-mono), "Geist Mono Fallback", ui-monospace, monospace;
   --font-display: var(--font-manrope);
   --font-heading: var(--font-manrope);
   --color-brand: var(--brand);
@@ -102,6 +102,62 @@
   --sidebar-accent-foreground: #8f2f4b;
   --sidebar-border: #e8e6e1;
   --sidebar-ring: #a43d5c;
+}
+
+/* Dark mode — warm tonal variants, not inverted. Rose is lifted for contrast,
+   graphite primary becomes a warm off-white pill so actions stay prominent. */
+.dark {
+  --background: #16130f;
+  --foreground: #f3efe7;
+
+  --brand: #d07f97;
+  --brand-strong: #e3a0b3;
+  --brand-soft: #2a1a20;
+  --brand-muted: #5c3a45;
+
+  --ink: #f3efe7;
+  --ink-muted: #a9a299;
+  --ink-soft: #847d74;
+
+  --warm: #1b1813;
+  --warm-strong: #221e18;
+  --warm-border: #322d26;
+  --hairline: #2b271f;
+
+  --card: #1c1813;
+  --card-foreground: #f3efe7;
+  --popover: #1c1813;
+  --popover-foreground: #f3efe7;
+
+  /* Primary = warm off-white pill (inverted graphite) */
+  --primary: #f3efe7;
+  --primary-foreground: #1c1813;
+
+  --secondary: #221e18;
+  --secondary-foreground: #f3efe7;
+  --muted: #221e18;
+  --muted-foreground: #a9a299;
+  --accent: #2a1a20;
+  --accent-foreground: #e3a0b3;
+  --destructive: #f1707a;
+  --border: #322d26;
+  --input: #322d26;
+  --ring: #d07f97;
+
+  --chart-1: #d07f97;
+  --chart-2: #e3a0b3;
+  --chart-3: #f3efe7;
+  --chart-4: #a9a299;
+  --chart-5: #5c3a45;
+
+  --sidebar: #1b1813;
+  --sidebar-foreground: #f3efe7;
+  --sidebar-primary: #f3efe7;
+  --sidebar-primary-foreground: #1c1813;
+  --sidebar-accent: #2a1a20;
+  --sidebar-accent-foreground: #e3a0b3;
+  --sidebar-border: #322d26;
+  --sidebar-ring: #d07f97;
 }
 
 @layer base {

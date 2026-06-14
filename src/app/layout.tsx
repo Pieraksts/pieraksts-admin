@@ -24,8 +24,22 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Pieraksts Admin",
-  description: "Internal salon contract and billing administration for Pieraksts.",
+  description:
+    "Internal salon contract and billing administration for Pieraksts.",
 };
+
+// Runs before paint to set the theme class, avoiding a light/dark flash.
+const themeScript = `
+(function () {
+  try {
+    var stored = localStorage.getItem("pieraksts-theme");
+    var system = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (stored === "dark" || (stored !== "light" && system)) {
+      document.documentElement.classList.add("dark");
+    }
+  } catch (e) {}
+})();
+`;
 
 export default function RootLayout({
   children,
@@ -35,8 +49,12 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${manrope.variable} ${inter.variable} ${geistMono.variable} h-full`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="flex min-h-full flex-col antialiased">{children}</body>
     </html>
   );
