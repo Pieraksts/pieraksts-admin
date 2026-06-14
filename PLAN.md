@@ -1,5 +1,11 @@
 # Pieraksts Admin Plan
 
+> **Design decisions** (the authoritative "why") live in
+> [docs/product-decisions.md](docs/product-decisions.md). The auth phase is
+> documented separately in [docs/auth-and-access.md](docs/auth-and-access.md).
+> Read both before building — they resolve the behavioural branches this
+> checklist only names.
+
 ## Purpose
 
 Pieraksts Admin is an internal back office for managing salon client contracts,
@@ -35,18 +41,34 @@ billing/admin surface, but that should be explicitly designed and permissioned.
   - Manrope for display and headings.
   - Inter for body text.
 - [x] Use Phosphor icons for admin UI components and dashboard actions.
-- [ ] Connect `pieraksts-admin` to Supabase from server-only code.
-- [ ] Build read-only salon list from real Supabase data.
-- [ ] Build read-only salon detail page.
-- [ ] Add legal profile editing.
-- [ ] Add contract create/edit/versioning.
-- [ ] Add booking fee list.
+- [x] Build the admin app shell: sidebar + topbar, route group `(dashboard)`,
+  light/dark theme switching (no-FOUC inline script + toggle).
+- [x] Replace the marketing-style landing with a simple Overview (KPIs, needs
+  attention, salon shortcuts).
+- [x] Scaffold pages against a typed mock data layer (`src/lib/data/salons.ts`,
+  the single Supabase swap-point):
+  - [x] Salon list table (`/salons`).
+  - [x] Salon detail (`/salons/[salonId]`): legal profile, contract history,
+    uninvoiced fees, invoices.
+  - [x] New-contract form flow (`/salons/[salonId]/contract/new`) with live
+    draft summary and validation (no persistence yet).
+  - [x] Invoices empty state (`/invoices`).
+- [ ] Connect `pieraksts-admin` to Supabase from server-only code (replace the
+  bodies in `src/lib/data/salons.ts`).
+- [ ] Wire the salon list/detail to real Supabase data.
+- [ ] Add legal profile editing (currently read-only, edit button disabled).
+- [ ] Persist contract create/edit/versioning from the form.
 - [ ] Add monthly invoice generation.
 - [ ] Add invoice PDF generation/download flow.
-- [ ] Add admin authentication and authorization hardening.
+- [ ] Add admin authentication and authorization hardening (no auth yet — a
+  placeholder "Owner" chip stands in for the signed-in user).
 
-Current next step: connect `pieraksts-admin` to Supabase server-side and build
-the read-only `/admin/salons` page.
+Current next step: connect `pieraksts-admin` to Supabase server-side by
+replacing the mock accessors in `src/lib/data/salons.ts`, keeping service-role
+usage server-only.
+
+Routes use the App Router with a `(dashboard)` route group whose layout renders
+the shell, so a future unauthenticated `/login` can live outside the group.
 
 ## Initial Product Flow
 
