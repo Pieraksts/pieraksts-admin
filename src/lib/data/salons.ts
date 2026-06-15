@@ -1,21 +1,19 @@
 /**
- * Mock salon/contract/billing data.
+ * Salon / contract / billing data — server-only Supabase reads.
  *
- * This is the single swap-point for Supabase. The accessor functions are async
- * and shaped like the eventual server-only queries, so wiring real data later
- * means replacing the bodies here — not touching any page.
+ * This is the single swap-point the UI is built against; the accessors are async
+ * and shaped so pages don't care that the source is now Supabase (service-role)
+ * instead of the previous mock.
  *
- * Field names mirror the migration tables documented in PLAN.md:
- * salon_admin_profiles, salon_legal_profiles, salon_contracts, booking_fees,
- * salon_invoices.
+ * Money is `numeric(12, 2)` **euros** throughout (matching the DB), not cents.
+ *
+ * Tables (see `Pieraksts/supabase/migrations/20260614120000_contract_billing_admin_foundation.sql`):
+ * salons, salon_admin_profiles, salon_legal_profiles, salon_contracts,
+ * booking_fees, salon_invoices, plus `profiles` for the app-user count.
  */
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type ClientStatus =
-  | "lead"
-  | "negotiating"
-  | "active"
-  | "paused"
-  | "terminated";
+export type ClientStatus = "new" | "active" | "paused" | "terminated";
 
 export type ContractStatus =
   | "draft"
@@ -36,6 +34,24 @@ export type LegalProfile = {
   billingPhone: string | null;
 };
 
+// Fields required before a contract can be drawn (docs/product-decisions.md →
+// "PDF generation" legal-profile gate). Shared by the contract page and the
+// create-contract action so the gate is defined once.
+const REQUIRED_LEGAL_FIELDS: { key: keyof LegalProfile; label: string }[] = [
+  { key: "companyName", label: "Company name" },
+  { key: "registrationNumber", label: "Registration number" },
+  { key: "legalAddress", label: "Legal address" },
+  { key: "contactPerson", label: "Contact person" },
+];
+
+/** Labels of the required legal-profile fields that are still missing/blank. */
+export function missingLegalFields(profile: LegalProfile | null): string[] {
+  return REQUIRED_LEGAL_FIELDS.filter(({ key }) => {
+    const value = profile?.[key];
+    return !value || (typeof value === "string" && value.trim() === "");
+  }).map((f) => f.label);
+}
+
 export type Contract = {
   id: string;
   version: number;
@@ -49,9 +65,9 @@ export type BookingFee = {
   id: string;
   bookingDate: string;
   serviceName: string;
-  grossAmountCents: number;
+  grossAmount: number;
   commissionRateBps: number;
-  commissionAmountCents: number;
+  commissionAmount: number;
   invoiced: boolean;
 };
 
@@ -60,7 +76,7 @@ export type Invoice = {
   reference: string;
   periodStart: string;
   periodEnd: string;
-  subtotalCents: number;
+  subtotal: number;
   status: InvoiceStatus;
 };
 
@@ -69,8 +85,9 @@ export type SalonSummary = {
   name: string;
   city: string;
   clientStatus: ClientStatus;
+  isPublic: boolean;
   activeContract: Contract | null;
-  uninvoicedCents: number;
+  uninvoiced: number;
   latestInvoiceStatus: InvoiceStatus | null;
 };
 
@@ -81,229 +98,416 @@ export type SalonDetail = SalonSummary & {
   invoices: Invoice[];
 };
 
-const SALONS: SalonDetail[] = [
-  {
-    id: "beauty-studio-riga",
-    name: "Beauty Studio Riga",
-    city: "Rīga",
-    clientStatus: "active",
-    uninvoicedCents: 6200,
-    latestInvoiceStatus: "paid",
-    activeContract: {
-      id: "c-bsr-2",
-      version: 2,
-      commissionRateBps: 500,
-      startDate: "2026-01-01",
-      endDate: "2026-12-31",
-      status: "active",
-    },
-    legalProfile: {
-      companyName: "Beauty Studio Riga SIA",
-      registrationNumber: "40003123456",
-      vatNumber: "LV40003123456",
-      legalAddress: "Brīvības iela 42, Rīga, LV-1010",
-      contactPerson: "Anna Bērziņa",
-      billingEmail: "billing@beautystudio.lv",
-      billingPhone: "+371 20 123 456",
-    },
-    contracts: [
-      {
-        id: "c-bsr-2",
-        version: 2,
-        commissionRateBps: 500,
-        startDate: "2026-01-01",
-        endDate: "2026-12-31",
-        status: "active",
-      },
-      {
-        id: "c-bsr-1",
-        version: 1,
-        commissionRateBps: 700,
-        startDate: "2025-01-01",
-        endDate: "2025-12-31",
-        status: "terminated",
-      },
-    ],
-    bookingFees: [
-      {
-        id: "f-1",
-        bookingDate: "2026-06-02",
-        serviceName: "Gel manicure",
-        grossAmountCents: 4500,
-        commissionRateBps: 500,
-        commissionAmountCents: 225,
-        invoiced: false,
-      },
-      {
-        id: "f-2",
-        bookingDate: "2026-06-05",
-        serviceName: "Haircut & styling",
-        grossAmountCents: 7900,
-        commissionRateBps: 500,
-        commissionAmountCents: 395,
-        invoiced: false,
-      },
-    ],
-    invoices: [
-      {
-        id: "i-1",
-        reference: "PR-2026-05-001",
-        periodStart: "2026-05-01",
-        periodEnd: "2026-05-31",
-        subtotalCents: 5400,
-        status: "paid",
-      },
-    ],
-  },
-  {
-    id: "nails-and-co",
-    name: "Nails & Co",
-    city: "Jūrmala",
-    clientStatus: "negotiating",
-    uninvoicedCents: 0,
-    latestInvoiceStatus: null,
-    activeContract: null,
-    legalProfile: {
-      companyName: "Nails and Co SIA",
-      registrationNumber: "40103987654",
-      vatNumber: null,
-      legalAddress: "Jomas iela 5, Jūrmala, LV-2015",
-      contactPerson: "Līga Kalniņa",
-      billingEmail: "liga@nailsco.lv",
-      billingPhone: null,
-    },
-    contracts: [
-      {
-        id: "c-nc-1",
-        version: 1,
-        commissionRateBps: 600,
-        startDate: "2026-07-01",
-        endDate: null,
-        status: "draft",
-      },
-    ],
-    bookingFees: [],
-    invoices: [],
-  },
-  {
-    id: "studio-lapa",
-    name: "Studio Lapa",
-    city: "Liepāja",
-    clientStatus: "paused",
-    uninvoicedCents: 1850,
-    latestInvoiceStatus: "overdue",
-    activeContract: {
-      id: "c-sl-1",
-      version: 1,
-      commissionRateBps: 800,
-      startDate: "2027-01-01",
-      endDate: null,
-      status: "signed",
-    },
-    legalProfile: null,
-    contracts: [
-      {
-        id: "c-sl-1",
-        version: 1,
-        commissionRateBps: 800,
-        startDate: "2027-01-01",
-        endDate: null,
-        status: "signed",
-      },
-    ],
-    bookingFees: [
-      {
-        id: "f-3",
-        bookingDate: "2026-04-18",
-        serviceName: "Lash extensions",
-        grossAmountCents: 6166,
-        commissionRateBps: 300,
-        commissionAmountCents: 185,
-        invoiced: false,
-      },
-    ],
-    invoices: [
-      {
-        id: "i-2",
-        reference: "PR-2026-03-004",
-        periodStart: "2026-03-01",
-        periodEnd: "2026-03-31",
-        subtotalCents: 2100,
-        status: "overdue",
-      },
-    ],
-  },
-];
-
-export async function getSalons(): Promise<SalonSummary[]> {
-  return SALONS.map((s) => toSummary(s));
-}
-
-export async function getSalon(id: string): Promise<SalonDetail | null> {
-  return SALONS.find((s) => s.id === id) ?? null;
-}
+export type RecentInvoice = {
+  id: string;
+  reference: string;
+  salonId: string;
+  salonName: string;
+  periodStart: string;
+  periodEnd: string;
+  subtotal: number;
+  status: InvoiceStatus;
+};
 
 export type AdminOverview = {
   salonCount: number;
   activeCount: number;
-  uninvoicedCents: number;
-  openContractCount: number;
-  attention: { salonId: string; salonName: string; reason: string }[];
+  appUserCount: number;
+  uninvoiced: number;
+  recentInvoices: RecentInvoice[];
 };
 
-export async function getOverview(): Promise<AdminOverview> {
-  const attention: AdminOverview["attention"] = [];
-  let uninvoicedCents = 0;
-  let activeCount = 0;
-  let openContractCount = 0;
+// Default payment term; due = sent_at + 14d (docs/product-decisions.md → Invoices).
+const PAYMENT_TERM_DAYS = 14;
 
-  for (const s of SALONS) {
-    uninvoicedCents += s.uninvoicedCents;
-    if (s.clientStatus === "active") activeCount += 1;
-    openContractCount += s.contracts.filter(
-      (c) => c.status === "draft" || c.status === "pending_signature",
-    ).length;
+// ---------------------------------------------------------------------------
+// Row shapes (no generated DB types yet) + small mappers/helpers.
+// ---------------------------------------------------------------------------
 
-    if (s.latestInvoiceStatus === "overdue") {
-      attention.push({
-        salonId: s.id,
-        salonName: s.name,
-        reason: "Invoice overdue",
-      });
-    }
-    if (!s.legalProfile) {
-      attention.push({
-        salonId: s.id,
-        salonName: s.name,
-        reason: "Legal profile missing",
-      });
-    }
-    if (s.contracts.some((c) => c.status === "draft")) {
-      attention.push({
-        salonId: s.id,
-        salonName: s.name,
-        reason: "Contract draft awaiting signature",
-      });
-    }
+type Numeric = number | string;
+
+type SalonRow = {
+  id: string;
+  name: string;
+  city: string | null;
+  is_public: boolean;
+};
+
+type AdminProfileRow = { salon_id: string; client_status: string };
+
+type ContractRow = {
+  id: string;
+  salon_id: string;
+  version: number;
+  commission_rate_bps: number;
+  start_date: string;
+  end_date: string | null;
+  status: ContractStatus;
+};
+
+type FeeSumRow = { salon_id: string; commission_amount: Numeric };
+
+type FeeRow = {
+  id: string;
+  booking_date: string;
+  service_name_snapshot: string;
+  booking_gross_amount: Numeric;
+  commission_rate_bps: number;
+  commission_amount: Numeric;
+};
+
+type InvoiceRow = {
+  id: string;
+  salon_id: string;
+  period_start: string;
+  period_end: string;
+  subtotal_amount: Numeric;
+  status: string;
+  sent_at: string | null;
+};
+
+type RecentInvoiceRow = InvoiceRow & {
+  salons: { name: string } | { name: string }[] | null;
+};
+
+type LegalRow = {
+  company_name: string | null;
+  registration_number: string | null;
+  vat_number: string | null;
+  legal_address: string | null;
+  contact_person: string | null;
+  billing_email: string | null;
+  billing_phone: string | null;
+};
+
+/** PostgREST/numeric can arrive as a string; coerce to a euro number. */
+function toEuros(value: Numeric | null | undefined): number {
+  return value == null ? 0 : Number(value);
+}
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Mirrors `resolve_active_salon_contract`: the single `active` contract whose
+ * date range covers today, preferring the latest start_date then version. A
+ * `signed`/`draft`/future-dated contract resolves to none.
+ */
+function pickActiveContract(
+  contracts: Contract[],
+  today = todayISO(),
+): Contract | null {
+  const candidates = contracts
+    .filter(
+      (c) =>
+        c.status === "active" &&
+        c.startDate <= today &&
+        (c.endDate === null || c.endDate >= today),
+    )
+    .sort((a, b) =>
+      a.startDate === b.startDate
+        ? b.version - a.version
+        : a.startDate < b.startDate
+          ? 1
+          : -1,
+    );
+  return candidates[0] ?? null;
+}
+
+/** `salon_invoices` has no number column yet (a planned schema addition); use a
+ * short, stable id-derived reference until `invoice_number` lands. */
+function invoiceReference(id: string): string {
+  return id.slice(0, 8).toUpperCase();
+}
+
+/** Overdue is derived, never stored: a `sent` invoice past its 14-day term. */
+function deriveInvoiceStatus(
+  status: string,
+  sentAt: string | null,
+): InvoiceStatus {
+  if (status === "sent" && sentAt) {
+    const due = new Date(sentAt);
+    due.setDate(due.getDate() + PAYMENT_TERM_DAYS);
+    if (due.getTime() < Date.now()) return "overdue";
   }
+  return status as InvoiceStatus;
+}
 
+function mapContract(row: ContractRow): Contract {
   return {
-    salonCount: SALONS.length,
-    activeCount,
-    uninvoicedCents,
-    openContractCount,
-    attention,
+    id: row.id,
+    version: row.version,
+    commissionRateBps: row.commission_rate_bps,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    status: row.status,
   };
 }
 
-function toSummary(s: SalonDetail): SalonSummary {
+function mapInvoice(row: InvoiceRow): Invoice {
   return {
+    id: row.id,
+    reference: invoiceReference(row.id),
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    subtotal: toEuros(row.subtotal_amount),
+    status: deriveInvoiceStatus(row.status, row.sent_at),
+  };
+}
+
+function mapLegal(row: LegalRow): LegalProfile {
+  return {
+    companyName: row.company_name ?? "",
+    registrationNumber: row.registration_number ?? "",
+    vatNumber: row.vat_number,
+    legalAddress: row.legal_address ?? "",
+    contactPerson: row.contact_person ?? "",
+    billingEmail: row.billing_email ?? "",
+    billingPhone: row.billing_phone,
+  };
+}
+
+function unwrap<T>(
+  res: { data: T | null; error: { message: string } | null },
+  label: string,
+): T {
+  if (res.error) throw new Error(`${label}: ${res.error.message}`);
+  return (res.data ?? ([] as unknown as T)) as T;
+}
+
+// ---------------------------------------------------------------------------
+// Accessors.
+// ---------------------------------------------------------------------------
+
+export async function getSalons(): Promise<SalonSummary[]> {
+  const supabase = getSupabaseAdmin();
+
+  const [salonsRes, profilesRes, contractsRes, feesRes, invoicesRes] =
+    await Promise.all([
+      supabase
+        .from("salons")
+        .select("id, name, city, is_public")
+        .order("name")
+        .returns<SalonRow[]>(),
+      supabase
+        .from("salon_admin_profiles")
+        .select("salon_id, client_status")
+        .returns<AdminProfileRow[]>(),
+      supabase
+        .from("salon_contracts")
+        .select(
+          "id, salon_id, version, commission_rate_bps, start_date, end_date, status",
+        )
+        .returns<ContractRow[]>(),
+      supabase
+        .from("booking_fees")
+        .select("salon_id, commission_amount")
+        .is("invoice_id", null)
+        .returns<FeeSumRow[]>(),
+      // Ordered newest-first so the first row per salon is its latest invoice.
+      supabase
+        .from("salon_invoices")
+        .select("id, salon_id, period_start, period_end, subtotal_amount, status, sent_at")
+        .order("period_end", { ascending: false })
+        .order("created_at", { ascending: false })
+        .returns<InvoiceRow[]>(),
+    ]);
+
+  const salons = unwrap(salonsRes, "salons");
+  const profiles = unwrap(profilesRes, "salon_admin_profiles");
+  const contracts = unwrap(contractsRes, "salon_contracts");
+  const fees = unwrap(feesRes, "booking_fees");
+  const invoices = unwrap(invoicesRes, "salon_invoices");
+
+  const statusBySalon = new Map(
+    profiles.map((p) => [p.salon_id, p.client_status as ClientStatus]),
+  );
+
+  const contractsBySalon = new Map<string, Contract[]>();
+  for (const row of contracts) {
+    const list = contractsBySalon.get(row.salon_id) ?? [];
+    list.push(mapContract(row));
+    contractsBySalon.set(row.salon_id, list);
+  }
+
+  const uninvoicedBySalon = new Map<string, number>();
+  for (const fee of fees) {
+    uninvoicedBySalon.set(
+      fee.salon_id,
+      (uninvoicedBySalon.get(fee.salon_id) ?? 0) + toEuros(fee.commission_amount),
+    );
+  }
+
+  const latestInvoiceBySalon = new Map<string, InvoiceStatus>();
+  for (const inv of invoices) {
+    if (!latestInvoiceBySalon.has(inv.salon_id)) {
+      latestInvoiceBySalon.set(
+        inv.salon_id,
+        deriveInvoiceStatus(inv.status, inv.sent_at),
+      );
+    }
+  }
+
+  return salons.map((s) => ({
     id: s.id,
     name: s.name,
-    city: s.city,
-    clientStatus: s.clientStatus,
-    activeContract: s.activeContract,
-    uninvoicedCents: s.uninvoicedCents,
-    latestInvoiceStatus: s.latestInvoiceStatus,
+    city: s.city ?? "",
+    clientStatus: statusBySalon.get(s.id) ?? "new",
+    isPublic: s.is_public,
+    activeContract: pickActiveContract(contractsBySalon.get(s.id) ?? []),
+    uninvoiced: uninvoicedBySalon.get(s.id) ?? 0,
+    latestInvoiceStatus: latestInvoiceBySalon.get(s.id) ?? null,
+  }));
+}
+
+export async function getSalon(id: string): Promise<SalonDetail | null> {
+  const supabase = getSupabaseAdmin();
+
+  const [salonRes, profileRes, legalRes, contractsRes, feesRes, invoicesRes] =
+    await Promise.all([
+      supabase
+        .from("salons")
+        .select("id, name, city, is_public")
+        .eq("id", id)
+        .maybeSingle()
+        .returns<SalonRow>(),
+      supabase
+        .from("salon_admin_profiles")
+        .select("salon_id, client_status")
+        .eq("salon_id", id)
+        .maybeSingle()
+        .returns<AdminProfileRow>(),
+      supabase
+        .from("salon_legal_profiles")
+        .select(
+          "company_name, registration_number, vat_number, legal_address, contact_person, billing_email, billing_phone",
+        )
+        .eq("salon_id", id)
+        .maybeSingle()
+        .returns<LegalRow>(),
+      supabase
+        .from("salon_contracts")
+        .select(
+          "id, salon_id, version, commission_rate_bps, start_date, end_date, status",
+        )
+        .eq("salon_id", id)
+        .order("version", { ascending: false })
+        .returns<ContractRow[]>(),
+      supabase
+        .from("booking_fees")
+        .select(
+          "id, booking_date, service_name_snapshot, booking_gross_amount, commission_rate_bps, commission_amount",
+        )
+        .eq("salon_id", id)
+        .is("invoice_id", null)
+        .order("booking_date", { ascending: false })
+        .returns<FeeRow[]>(),
+      supabase
+        .from("salon_invoices")
+        .select("id, salon_id, period_start, period_end, subtotal_amount, status, sent_at")
+        .eq("salon_id", id)
+        .order("period_end", { ascending: false })
+        .order("created_at", { ascending: false })
+        .returns<InvoiceRow[]>(),
+    ]);
+
+  if (salonRes.error) throw new Error(`salons: ${salonRes.error.message}`);
+  const salon = salonRes.data;
+  if (!salon) return null;
+
+  if (profileRes.error)
+    throw new Error(`salon_admin_profiles: ${profileRes.error.message}`);
+  if (legalRes.error)
+    throw new Error(`salon_legal_profiles: ${legalRes.error.message}`);
+
+  const contracts = unwrap(contractsRes, "salon_contracts").map(mapContract);
+  const bookingFees = unwrap(feesRes, "booking_fees").map((f) => ({
+    id: f.id,
+    bookingDate: f.booking_date,
+    serviceName: f.service_name_snapshot,
+    grossAmount: toEuros(f.booking_gross_amount),
+    commissionRateBps: f.commission_rate_bps,
+    commissionAmount: toEuros(f.commission_amount),
+    invoiced: false,
+  }));
+  const invoices = unwrap(invoicesRes, "salon_invoices").map(mapInvoice);
+
+  return {
+    id: salon.id,
+    name: salon.name,
+    city: salon.city ?? "",
+    clientStatus: (profileRes.data?.client_status as ClientStatus) ?? "new",
+    isPublic: salon.is_public,
+    activeContract: pickActiveContract(contracts),
+    uninvoiced: bookingFees.reduce((sum, f) => sum + f.commissionAmount, 0),
+    latestInvoiceStatus: invoices[0]?.status ?? null,
+    legalProfile: legalRes.data ? mapLegal(legalRes.data) : null,
+    contracts,
+    bookingFees,
+    invoices,
+  };
+}
+
+export async function getOverview(): Promise<AdminOverview> {
+  const supabase = getSupabaseAdmin();
+
+  const [salonCountRes, activeCountRes, appUserCountRes, feesRes, recentRes] =
+    await Promise.all([
+      supabase.from("salons").select("id", { count: "exact", head: true }),
+      supabase
+        .from("salon_admin_profiles")
+        .select("salon_id", { count: "exact", head: true })
+        .eq("client_status", "active"),
+      // App users = registered customers: profiles whose roles array holds 'client'.
+      supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .contains("roles", ["client"]),
+      supabase
+        .from("booking_fees")
+        .select("salon_id, commission_amount")
+        .is("invoice_id", null)
+        .returns<FeeSumRow[]>(),
+      supabase
+        .from("salon_invoices")
+        .select(
+          "id, salon_id, period_start, period_end, subtotal_amount, status, sent_at, salons(name)",
+        )
+        .order("created_at", { ascending: false })
+        .limit(6)
+        .returns<RecentInvoiceRow[]>(),
+    ]);
+
+  if (salonCountRes.error)
+    throw new Error(`salons count: ${salonCountRes.error.message}`);
+  if (activeCountRes.error)
+    throw new Error(`active count: ${activeCountRes.error.message}`);
+  if (appUserCountRes.error)
+    throw new Error(`profiles count: ${appUserCountRes.error.message}`);
+
+  const fees = unwrap(feesRes, "booking_fees");
+  const uninvoiced = fees.reduce((sum, f) => sum + toEuros(f.commission_amount), 0);
+
+  const recentInvoices = unwrap(recentRes, "salon_invoices").map((row) => {
+    const salon = Array.isArray(row.salons) ? row.salons[0] : row.salons;
+    return {
+      id: row.id,
+      reference: invoiceReference(row.id),
+      salonId: row.salon_id,
+      salonName: salon?.name ?? "",
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      subtotal: toEuros(row.subtotal_amount),
+      status: deriveInvoiceStatus(row.status, row.sent_at),
+    };
+  });
+
+  return {
+    salonCount: salonCountRes.count ?? 0,
+    activeCount: activeCountRes.count ?? 0,
+    appUserCount: appUserCountRes.count ?? 0,
+    uninvoiced,
+    recentInvoices,
   };
 }

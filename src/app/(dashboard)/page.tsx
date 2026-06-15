@@ -3,19 +3,21 @@ import {
   ArrowRight,
   Buildings,
   CheckCircle,
-  FileText,
   Receipt,
-  Warning,
+  Users,
 } from "@phosphor-icons/react/dist/ssr";
 
 import { PageHeader } from "@/components/admin/page-header";
 import { StatCard } from "@/components/admin/stat-card";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { getOverview, getSalons } from "@/lib/data/salons";
-import { formatMoney } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
+
+export const dynamic = "force-dynamic";
 
 export default async function OverviewPage() {
   const [overview, salons] = await Promise.all([getOverview(), getSalons()]);
+  const recentSalons = salons.slice(0, 6);
 
   return (
     <div className="flex flex-col gap-8">
@@ -26,64 +28,72 @@ export default async function OverviewPage() {
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
-          label="Salon clients"
+          label="Total salons"
           value={String(overview.salonCount)}
-          hint={`${overview.activeCount} active`}
+          hint="Registered in the app"
           icon={Buildings}
         />
         <StatCard
+          label="Active salons"
+          value={String(overview.activeCount)}
+          hint="Client status active"
+          icon={CheckCircle}
+        />
+        <StatCard
+          label="App users"
+          value={overview.appUserCount.toLocaleString("en-IE")}
+          hint="Registered customers"
+          icon={Users}
+        />
+        <StatCard
           label="Uninvoiced fees"
-          value={formatMoney(overview.uninvoicedCents)}
+          value={formatMoney(overview.uninvoiced)}
           hint="Awaiting invoice"
           icon={Receipt}
           mono
         />
-        <StatCard
-          label="Open contracts"
-          value={String(overview.openContractCount)}
-          hint="Draft or pending"
-          icon={FileText}
-        />
-        <StatCard
-          label="Needs attention"
-          value={String(overview.attention.length)}
-          hint="Items below"
-          icon={Warning}
-        />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-5">
-        {/* Needs attention */}
+        {/* Recent invoices */}
         <div className="rounded-xl border border-hairline bg-card lg:col-span-3">
           <div className="border-b border-hairline px-5 py-4">
             <h2 className="display-type text-[16px] font-bold tracking-[-0.01em]">
-              Needs attention
+              Recent invoices
             </h2>
           </div>
-          {overview.attention.length === 0 ? (
-            <div className="flex items-center gap-3 px-5 py-8 text-ink-muted">
-              <CheckCircle size={20} weight="duotone" className="text-brand" />
-              <p className="text-[14px]">Nothing needs attention right now.</p>
+          {overview.recentInvoices.length === 0 ? (
+            <div className="px-5 py-8">
+              <p className="text-[14px] text-ink-muted">
+                No invoices generated yet.
+              </p>
             </div>
           ) : (
             <ul className="divide-y divide-hairline">
-              {overview.attention.map((item, i) => (
-                <li key={`${item.salonId}-${i}`}>
+              {overview.recentInvoices.map((inv) => (
+                <li key={inv.id}>
                   <Link
-                    href={`/salons/${item.salonId}`}
+                    href={`/salons/${inv.salonId}`}
                     className="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-warm-strong"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-[14px] font-semibold text-foreground">
-                        {item.salonName}
+                        {inv.salonName}
                       </p>
-                      <p className="text-[13px] text-ink-muted">{item.reason}</p>
+                      <p className="text-[12px] text-ink-soft">
+                        <span className="font-mono tabular-nums">
+                          {inv.reference}
+                        </span>{" "}
+                        · {formatDate(inv.periodStart)} –{" "}
+                        {formatDate(inv.periodEnd)}
+                      </p>
                     </div>
-                    <ArrowRight
-                      size={16}
-                      weight="bold"
-                      className="shrink-0 text-ink-soft"
-                    />
+                    <div className="flex shrink-0 items-center gap-3">
+                      <span className="font-mono text-[13px] tabular-nums text-foreground">
+                        {formatMoney(inv.subtotal)}
+                      </span>
+                      <StatusBadge status={inv.status} />
+                    </div>
                   </Link>
                 </li>
               ))}
@@ -105,24 +115,30 @@ export default async function OverviewPage() {
               <ArrowRight size={13} weight="bold" />
             </Link>
           </div>
-          <ul className="divide-y divide-hairline">
-            {salons.map((salon) => (
-              <li key={salon.id}>
-                <Link
-                  href={`/salons/${salon.id}`}
-                  className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-warm-strong"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-[14px] font-semibold text-foreground">
-                      {salon.name}
-                    </p>
-                    <p className="text-[12px] text-ink-soft">{salon.city}</p>
-                  </div>
-                  <StatusBadge status={salon.clientStatus} />
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {recentSalons.length === 0 ? (
+            <div className="px-5 py-8">
+              <p className="text-[14px] text-ink-muted">No salons yet.</p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-hairline">
+              {recentSalons.map((salon) => (
+                <li key={salon.id}>
+                  <Link
+                    href={`/salons/${salon.id}`}
+                    className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-warm-strong"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[14px] font-semibold text-foreground">
+                        {salon.name}
+                      </p>
+                      <p className="text-[12px] text-ink-soft">{salon.city}</p>
+                    </div>
+                    <StatusBadge status={salon.clientStatus} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
     </div>

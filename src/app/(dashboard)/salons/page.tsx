@@ -17,6 +17,8 @@ import { formatMoney, formatRate } from "@/lib/format";
 
 export const metadata = { title: "Salons · Pieraksts Admin" };
 
+export const dynamic = "force-dynamic";
+
 export default async function SalonsPage() {
   const salons = await getSalons();
 
@@ -72,7 +74,7 @@ export default async function SalonsPage() {
                     : "No active contract"}
                 </TableCell>
                 <TableCell className="text-right font-mono text-[13px] tabular-nums text-foreground">
-                  {formatMoney(salon.uninvoicedCents)}
+                  {formatMoney(salon.uninvoiced)}
                 </TableCell>
                 <TableCell className="pr-5 text-right">
                   {salon.latestInvoiceStatus ? (
