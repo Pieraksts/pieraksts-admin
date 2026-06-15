@@ -130,8 +130,7 @@ export async function cancelInvoice(invoiceId: string, salonId: string) {
     throw new Error("cancelInvoice: only a draft or sent invoice can be cancelled");
   }
 
-  // Release the frozen fees. The lines stay attached to the cancelled invoice as
-  // a record; the fees themselves become uninvoiced again.
+  // Release the frozen fees so they become uninvoiced again.
   const { error: releaseError } = await supabase
     .from("booking_fees")
     .update({ invoice_id: null })
@@ -139,6 +138,19 @@ export async function cancelInvoice(invoiceId: string, salonId: string) {
 
   if (releaseError) {
     throw new Error(`cancelInvoice (release fees): ${releaseError.message}`);
+  }
+
+  // Drop the frozen line items. `salon_invoice_lines.booking_fee_id` is unique,
+  // so leaving them would block the released fees from ever being re-invoiced.
+  // The cancelled invoice header (number, period, totals, status) is retained as
+  // the void record.
+  const { error: linesError } = await supabase
+    .from("salon_invoice_lines")
+    .delete()
+    .eq("invoice_id", invoiceId);
+
+  if (linesError) {
+    throw new Error(`cancelInvoice (clear lines): ${linesError.message}`);
   }
 
   revalidateInvoices(salonId, invoiceId);
