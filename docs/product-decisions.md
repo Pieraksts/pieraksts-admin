@@ -15,7 +15,12 @@ authoritative "why" for the admin panel's behaviour. Pairs with:
   `client` (customer) and `owner` (salon owner). There is **no Pieraksts-staff
   role** — see the auth doc.
 - **Client status** — `salon_admin_profiles.client_status`
-  (`lead → negotiating → active → paused → terminated`). Commercial/CRM only.
+  (`new → active → paused → terminated`). Commercial/CRM only.
+  **Revised 2026-06-14:** `lead` renamed to `new` (it's the auto-default for every
+  self-registered salon, not a qualified sales lead), and `negotiating` was
+  **dropped** (the contract lifecycle — `draft`/`pending_signature` — already
+  represents an in-progress deal). Schema migration + admin type/badge update
+  still pending; see "Going live" below.
 - **Contract status** — `salon_contracts.status`
   (`draft → pending_signature → signed → active → terminated`). Drives billing.
 - **Marketplace visibility** — `salons.is_public`. Whether the salon shows in the
@@ -24,7 +29,7 @@ authoritative "why" for the admin panel's behaviour. Pairs with:
 ## Salon list
 
 - Lists **all salons** (every salon registered in the app), left-joined to its
-  admin profile. Salons with no admin-profile row show as **Lead** (the table
+  admin profile. Salons with no admin-profile row show as **New** (the table
   default).
 - **No "Add salon" action.** Salons self-register in the app; the admin only
   *controls* a salon's status, contracts, invoices, visibility — it never
@@ -71,6 +76,34 @@ Body below the cards = **two panels**, replacing the old "Needs attention":
   so admin toggling is an **override** — last writer wins; an owner could
   re-publish. A hard lock (owner *cannot* re-show) would be a separate
   `admin_hidden` flag — **future, not now**.
+
+## Going live (visibility gate)
+
+**Decided 2026-06-14:** a salon must have an **active contract before it appears
+in the marketplace** — "sign before live". Chosen over a free-trial model as the
+simpler option now; a trial is deferred as a later growth lever that can layer on
+top of this gate (trial = "count as live without a contract until date X").
+
+- **Rule:** public visibility = `is_public = true` **AND** the salon has an active
+  contract (`resolve_active_salon_contract` returns a row). The contract
+  requirement must live in the **public marketplace query**, *not* in `is_public`
+  alone — `is_public` is also the salon owner's own toggle, so an `is_public`-only
+  gate is bypassable by the owner re-publishing. Enforcing it server-side closes
+  that loophole.
+- A newly self-registered salon is **registered but hidden** until you activate
+  its first contract. Visibility is the thing they sign for — this is the
+  conversion lever.
+- **In-app message:** the owner-facing app shows a clear notice to contract-less
+  salons that they must be **contacted by sales / sign a contract to go live**,
+  rather than being silently invisible. (Pieraksts-app UI.)
+- **Relationship to client status:** with this gate, **`new → active` tracks
+  "has an active contract."** Consider *deriving* the new/active distinction from
+  contract state rather than a separate manual toggle, leaving `paused` /
+  `terminated` as the only hand-set relationship overrides.
+- **Cross-repo / out of the current admin step:** the marketplace-query change and
+  the in-app message live in the **Pieraksts** repo; the `client_status`
+  rename/value change is a Pieraksts migration (check constraint + default) plus
+  admin-side type and `StatusBadge` updates.
 
 ## Contracts
 
