@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { CheckCircle, Info } from "@phosphor-icons/react";
+import { useRouter } from "next/navigation";
+import { Info } from "@phosphor-icons/react";
 
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { createContract } from "@/lib/actions/salons";
 import { formatDate, formatRate } from "@/lib/format";
 
 type DraftStatus = "draft" | "pending_signature";
@@ -34,7 +36,9 @@ export function ContractForm({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [status, setStatus] = useState<DraftStatus>("draft");
-  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   const rateError = useMemo(() => {
     if (ratePercent === "") return null;
@@ -55,42 +59,26 @@ export function ContractForm({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!valid) return;
-    // No persistence yet — this prepares the draft. Saving and PDF generation
-    // are wired to Supabase in a later step (see PLAN.md).
-    setSubmitted(true);
-  }
-
-  if (submitted) {
-    return (
-      <div className="rounded-xl border border-hairline bg-card p-6">
-        <div className="flex items-start gap-3">
-          <CheckCircle
-            size={22}
-            weight="duotone"
-            className="mt-0.5 shrink-0 text-brand"
-          />
-          <div>
-            <h2 className="display-type text-[17px] font-bold tracking-[-0.01em]">
-              Draft prepared
-            </h2>
-            <p className="mt-1.5 text-[14px] leading-6 text-ink-muted">
-              Version {nextVersion} for {salonName} at{" "}
-              {formatRate(Math.round(Number(ratePercent) * 100))}, starting{" "}
-              {formatDate(startDate)}. Saving and PDF generation are wired to
-              Supabase in a later step — nothing is stored yet.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/salons/${salonId}`}>Back to salon</Link>
-              </Button>
-              <Button size="sm" onClick={() => setSubmitted(false)}>
-                Edit draft
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    setError(null);
+    startTransition(async () => {
+      try {
+        await createContract(salonId, {
+          commissionRateBps: Math.round(Number(ratePercent) * 100),
+          startDate,
+          endDate: endDate || null,
+          status,
+        });
+        router.push(`/salons/${salonId}`);
+        router.refresh();
+      } catch (err) {
+        setError(
+          err instanceof Error &&
+            err.message.includes("LEGAL_PROFILE_INCOMPLETE")
+            ? "The legal profile is incomplete — go back and complete it first."
+            : "Could not create the contract. Please try again.",
+        );
+      }
+    });
   }
 
   return (
@@ -184,9 +172,13 @@ export function ContractForm({
           as history.
         </div>
 
+        {error ? (
+          <p className="text-[13px] text-destructive">{error}</p>
+        ) : null}
+
         <div className="flex items-center gap-2 pt-1">
-          <Button type="submit" disabled={!valid}>
-            Prepare draft
+          <Button type="submit" disabled={!valid || pending}>
+            {pending ? "Creating…" : "Create contract"}
           </Button>
           <Button asChild variant="ghost">
             <Link href={`/salons/${salonId}`}>Cancel</Link>

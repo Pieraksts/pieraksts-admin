@@ -14,8 +14,7 @@ const TONE: Record<Tone, string> = {
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   // client status
-  lead: { label: "Lead", tone: "progress" },
-  negotiating: { label: "Negotiating", tone: "progress" },
+  new: { label: "New", tone: "progress" },
   active: { label: "Active", tone: "positive" },
   paused: { label: "Paused", tone: "muted" },
   terminated: { label: "Terminated", tone: "danger" },

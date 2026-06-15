@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  FilePlus,
-  PencilSimple,
-} from "@phosphor-icons/react/dist/ssr";
+import { FilePlus } from "@phosphor-icons/react/dist/ssr";
 
+import { ClientStatusSelect } from "@/components/admin/client-status-select";
+import { ContractActions } from "@/components/admin/contract-actions";
+import { LegalProfileDialog } from "@/components/admin/legal-profile-dialog";
 import { PageHeader } from "@/components/admin/page-header";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { VisibilityToggle } from "@/components/admin/visibility-toggle";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -18,6 +19,8 @@ import {
 } from "@/components/ui/table";
 import { getSalon } from "@/lib/data/salons";
 import { formatDate, formatMoney, formatRate } from "@/lib/format";
+
+export const dynamic = "force-dynamic";
 
 export default async function SalonDetailPage(
   props: PageProps<"/salons/[salonId]">,
@@ -45,7 +48,13 @@ export default async function SalonDetailPage(
       />
 
       <div className="flex flex-wrap items-center gap-2 text-[14px] text-ink-muted">
-        <StatusBadge status={salon.clientStatus} />
+        <ClientStatusSelect
+          salonId={salon.id}
+          status={salon.clientStatus}
+          activeContract={salon.activeContract}
+          isPublic={salon.isPublic}
+        />
+        <VisibilityToggle salonId={salon.id} isPublic={salon.isPublic} />
         <span aria-hidden>·</span>
         <span>{salon.city}</span>
         {salon.activeContract ? (
@@ -58,7 +67,7 @@ export default async function SalonDetailPage(
         ) : null}
         <span aria-hidden>·</span>
         <span className="font-mono tabular-nums">
-          {formatMoney(salon.uninvoicedCents)} uninvoiced
+          {formatMoney(salon.uninvoiced)} uninvoiced
         </span>
       </div>
 
@@ -66,12 +75,7 @@ export default async function SalonDetailPage(
       <Section
         title="Legal profile"
         action={
-          salon.legalProfile ? (
-            <Button variant="ghost" size="sm" disabled title="Editing coming soon">
-              <PencilSimple size={14} data-icon="inline-start" />
-              Edit
-            </Button>
-          ) : null
+          <LegalProfileDialog salonId={salon.id} profile={salon.legalProfile} />
         }
       >
         {salon.legalProfile ? (
@@ -100,10 +104,7 @@ export default async function SalonDetailPage(
             />
           </dl>
         ) : (
-          <EmptyState
-            message="No legal profile yet. It's required before drafting a contract."
-            cta="Add legal profile"
-          />
+          <EmptyState message="No legal profile yet. Use “Add legal profile” above — it's required before drafting a contract." />
         )}
       </Section>
 
@@ -116,7 +117,8 @@ export default async function SalonDetailPage(
               <Th>Commission</Th>
               <Th>Start</Th>
               <Th>End</Th>
-              <Th className="pr-5 text-right">Status</Th>
+              <Th>Status</Th>
+              <Th className="pr-5 text-right">Actions</Th>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -134,8 +136,15 @@ export default async function SalonDetailPage(
                 <TableCell className="text-[13px] text-ink-muted">
                   {formatDate(c.endDate)}
                 </TableCell>
-                <TableCell className="pr-5 text-right">
+                <TableCell>
                   <StatusBadge status={c.status} />
+                </TableCell>
+                <TableCell className="pr-5 text-right">
+                  <ContractActions
+                    salonId={salon.id}
+                    contract={c}
+                    activeContract={salon.activeContract}
+                  />
                 </TableCell>
               </TableRow>
             ))}
@@ -150,7 +159,7 @@ export default async function SalonDetailPage(
           uninvoicedFees.length > 0 ? (
             <span className="font-mono text-[13px] tabular-nums text-ink-muted">
               {formatMoney(
-                uninvoicedFees.reduce((s, f) => s + f.commissionAmountCents, 0),
+                uninvoicedFees.reduce((s, f) => s + f.commissionAmount, 0),
               )}
             </span>
           ) : null
@@ -179,13 +188,13 @@ export default async function SalonDetailPage(
                     {f.serviceName}
                   </TableCell>
                   <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
-                    {formatMoney(f.grossAmountCents)}
+                    {formatMoney(f.grossAmount)}
                   </TableCell>
                   <TableCell className="text-[13px] text-ink-muted">
                     {formatRate(f.commissionRateBps)}
                   </TableCell>
                   <TableCell className="pr-5 text-right font-mono text-[13px] tabular-nums text-foreground">
-                    {formatMoney(f.commissionAmountCents)}
+                    {formatMoney(f.commissionAmount)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -218,7 +227,7 @@ export default async function SalonDetailPage(
                     {formatDate(inv.periodStart)} – {formatDate(inv.periodEnd)}
                   </TableCell>
                   <TableCell className="text-right font-mono text-[13px] tabular-nums text-foreground">
-                    {formatMoney(inv.subtotalCents)}
+                    {formatMoney(inv.subtotal)}
                   </TableCell>
                   <TableCell className="pr-5 text-right">
                     <StatusBadge status={inv.status} />
