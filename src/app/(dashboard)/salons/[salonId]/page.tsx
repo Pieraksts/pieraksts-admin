@@ -1,9 +1,12 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FilePlus } from "@phosphor-icons/react/dist/ssr";
 
 import { ClientStatusSelect } from "@/components/admin/client-status-select";
 import { ContractActions } from "@/components/admin/contract-actions";
+import { GenerateInvoice } from "@/components/admin/generate-invoice";
+import { InvoiceActions } from "@/components/admin/invoice-actions";
 import { LegalProfileDialog } from "@/components/admin/legal-profile-dialog";
 import { PageHeader } from "@/components/admin/page-header";
 import { StatusBadge } from "@/components/admin/status-badge";
@@ -17,6 +20,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SUPPLIER, SUPPLIER_VAT_RATE_BPS } from "@/lib/config/supplier";
+import type { BookingFee } from "@/lib/data/salons";
 import { getSalon } from "@/lib/data/salons";
 import { formatDate, formatMoney, formatRate } from "@/lib/format";
 
@@ -152,17 +157,25 @@ export default async function SalonDetailPage(
         </Table>
       </Section>
 
-      {/* Uninvoiced booking fees */}
+      {/* Uninvoiced booking fees, grouped by month so stragglers stay visible */}
       <Section
         title="Uninvoiced fees"
         action={
-          uninvoicedFees.length > 0 ? (
-            <span className="font-mono text-[13px] tabular-nums text-ink-muted">
-              {formatMoney(
-                uninvoicedFees.reduce((s, f) => s + f.commissionAmount, 0),
-              )}
-            </span>
-          ) : null
+          <div className="flex items-center gap-3">
+            {uninvoicedFees.length > 0 ? (
+              <span className="font-mono text-[13px] tabular-nums text-ink-muted">
+                {formatMoney(
+                  uninvoicedFees.reduce((s, f) => s + f.commissionAmount, 0),
+                )}
+              </span>
+            ) : null}
+            <GenerateInvoice
+              salonId={salon.id}
+              uninvoicedFees={uninvoicedFees}
+              vatRateBps={SUPPLIER_VAT_RATE_BPS}
+              vatRegistered={SUPPLIER.vatRegistered}
+            />
+          </div>
         }
       >
         {uninvoicedFees.length === 0 ? (
@@ -179,24 +192,40 @@ export default async function SalonDetailPage(
               </TableRow>
             </TableHeader>
             <TableBody>
-              {uninvoicedFees.map((f) => (
-                <TableRow key={f.id} className="border-hairline">
-                  <TableCell className="pl-5 text-[13px] text-ink-muted">
-                    {formatDate(f.bookingDate)}
-                  </TableCell>
-                  <TableCell className="text-[13px] text-foreground">
-                    {f.serviceName}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
-                    {formatMoney(f.grossAmount)}
-                  </TableCell>
-                  <TableCell className="text-[13px] text-ink-muted">
-                    {formatRate(f.commissionRateBps)}
-                  </TableCell>
-                  <TableCell className="pr-5 text-right font-mono text-[13px] tabular-nums text-foreground">
-                    {formatMoney(f.commissionAmount)}
-                  </TableCell>
-                </TableRow>
+              {groupFeesByMonth(uninvoicedFees).map((group) => (
+                <Fragment key={group.month}>
+                  <TableRow className="border-hairline bg-warm-strong hover:bg-warm-strong">
+                    <TableCell
+                      colSpan={4}
+                      className="pl-5 text-[12px] font-semibold tracking-[0.04em] text-ink-muted uppercase"
+                    >
+                      {monthLabel(group.month)} · {group.fees.length}{" "}
+                      {group.fees.length === 1 ? "fee" : "fees"}
+                    </TableCell>
+                    <TableCell className="pr-5 text-right font-mono text-[12px] tabular-nums text-ink-muted">
+                      {formatMoney(group.subtotal)}
+                    </TableCell>
+                  </TableRow>
+                  {group.fees.map((f) => (
+                    <TableRow key={f.id} className="border-hairline">
+                      <TableCell className="pl-5 text-[13px] text-ink-muted">
+                        {formatDate(f.bookingDate)}
+                      </TableCell>
+                      <TableCell className="text-[13px] text-foreground">
+                        {f.serviceName}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
+                        {formatMoney(f.grossAmount)}
+                      </TableCell>
+                      <TableCell className="text-[13px] text-ink-muted">
+                        {formatRate(f.commissionRateBps)}
+                      </TableCell>
+                      <TableCell className="pr-5 text-right font-mono text-[13px] tabular-nums text-foreground">
+                        {formatMoney(f.commissionAmount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </Fragment>
               ))}
             </TableBody>
           </Table>
@@ -211,26 +240,43 @@ export default async function SalonDetailPage(
           <Table>
             <TableHeader>
               <TableRow className="border-hairline hover:bg-transparent">
-                <Th className="pl-5">Reference</Th>
+                <Th className="pl-5">Number</Th>
                 <Th>Period</Th>
-                <Th className="text-right">Subtotal</Th>
-                <Th className="pr-5 text-right">Status</Th>
+                <Th className="text-right">Net</Th>
+                <Th className="text-right">VAT</Th>
+                <Th className="text-right">Total</Th>
+                <Th>Status</Th>
+                <Th className="pr-5 text-right">Actions</Th>
               </TableRow>
             </TableHeader>
             <TableBody>
               {salon.invoices.map((inv) => (
                 <TableRow key={inv.id} className="border-hairline">
-                  <TableCell className="pl-5 font-mono text-[13px] tabular-nums text-foreground">
-                    {inv.reference}
+                  <TableCell className="pl-5">
+                    <Link
+                      href={`/invoices/${inv.id}`}
+                      className="font-mono text-[13px] tabular-nums font-semibold text-brand-strong hover:text-brand hover:underline"
+                    >
+                      {inv.reference}
+                    </Link>
                   </TableCell>
                   <TableCell className="text-[13px] text-ink-muted">
                     {formatDate(inv.periodStart)} – {formatDate(inv.periodEnd)}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-[13px] tabular-nums text-foreground">
+                  <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
                     {formatMoney(inv.subtotal)}
                   </TableCell>
-                  <TableCell className="pr-5 text-right">
+                  <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
+                    {inv.vatRateBps > 0 ? formatMoney(inv.vatAmount) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-[13px] tabular-nums font-semibold text-foreground">
+                    {formatMoney(inv.total)}
+                  </TableCell>
+                  <TableCell>
                     <StatusBadge status={inv.status} />
+                  </TableCell>
+                  <TableCell className="pr-5 text-right">
+                    <InvoiceActions invoice={inv} salonId={salon.id} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -300,4 +346,29 @@ function EmptyState({ message, cta }: { message: string; cta?: string }) {
       ) : null}
     </div>
   );
+}
+
+type FeeMonthGroup = { month: string; fees: BookingFee[]; subtotal: number };
+
+/** Group fees by booking month (YYYY-MM), newest month first. */
+function groupFeesByMonth(fees: BookingFee[]): FeeMonthGroup[] {
+  const byMonth = new Map<string, BookingFee[]>();
+  for (const fee of fees) {
+    const month = fee.bookingDate.slice(0, 7);
+    byMonth.set(month, [...(byMonth.get(month) ?? []), fee]);
+  }
+  return [...byMonth.entries()]
+    .map(([month, monthFees]) => ({
+      month,
+      fees: monthFees,
+      subtotal: monthFees.reduce((s, f) => s + f.commissionAmount, 0),
+    }))
+    .sort((a, b) => (a.month < b.month ? 1 : -1));
+}
+
+function monthLabel(month: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(`${month}-01T00:00:00Z`));
 }

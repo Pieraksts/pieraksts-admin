@@ -90,7 +90,7 @@ export default async function OverviewPage() {
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
                       <span className="font-mono text-[13px] tabular-nums text-foreground">
-                        {formatMoney(inv.subtotal)}
+                        {formatMoney(inv.total)}
                       </span>
                       <StatusBadge status={inv.status} />
                     </div>

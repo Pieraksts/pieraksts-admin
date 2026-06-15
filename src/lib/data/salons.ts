@@ -11,6 +11,7 @@
  * salons, salon_admin_profiles, salon_legal_profiles, salon_contracts,
  * booking_fees, salon_invoices, plus `profiles` for the app-user count.
  */
+import { requireSuperadmin } from "@/lib/auth/require-superadmin";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type ClientStatus = "new" | "active" | "paused" | "terminated";
@@ -73,11 +74,57 @@ export type BookingFee = {
 
 export type Invoice = {
   id: string;
+  /** Assigned `PR-YYYY-NNNN` once generated; falls back to an id prefix. */
   reference: string;
+  invoiceNumber: string | null;
   periodStart: string;
   periodEnd: string;
+  /** Net commission sum. */
   subtotal: number;
+  vatRateBps: number;
+  vatAmount: number;
+  /** subtotal + VAT — the amount due. */
+  total: number;
   status: InvoiceStatus;
+  sentAt: string | null;
+  paidAt: string | null;
+  /** Derived: sent_at + payment term; null until sent. */
+  dueDate: string | null;
+};
+
+export type InvoiceLine = {
+  id: string;
+  bookingDate: string;
+  serviceName: string;
+  grossAmount: number;
+  commissionRateBps: number;
+  commissionAmount: number;
+};
+
+export type InvoiceDetail = Invoice & {
+  salonId: string;
+  salonName: string;
+  lines: InvoiceLine[];
+};
+
+/** A salon's uninvoiced fees collapsed to one month (YYYY-MM). */
+export type UninvoicedMonth = {
+  month: string;
+  feeCount: number;
+  net: number;
+};
+
+export type InvoiceListItem = Invoice & {
+  salonId: string;
+  salonName: string;
+};
+
+/** A salon with uninvoiced fees, grouped by month — drives the /invoices page. */
+export type SalonUninvoiced = {
+  salonId: string;
+  salonName: string;
+  months: UninvoicedMonth[];
+  net: number;
 };
 
 export type SalonSummary = {
@@ -98,23 +145,12 @@ export type SalonDetail = SalonSummary & {
   invoices: Invoice[];
 };
 
-export type RecentInvoice = {
-  id: string;
-  reference: string;
-  salonId: string;
-  salonName: string;
-  periodStart: string;
-  periodEnd: string;
-  subtotal: number;
-  status: InvoiceStatus;
-};
-
 export type AdminOverview = {
   salonCount: number;
   activeCount: number;
   appUserCount: number;
   uninvoiced: number;
-  recentInvoices: RecentInvoice[];
+  recentInvoices: InvoiceListItem[];
 };
 
 // Default payment term; due = sent_at + 14d (docs/product-decisions.md → Invoices).
@@ -159,16 +195,34 @@ type FeeRow = {
 type InvoiceRow = {
   id: string;
   salon_id: string;
+  invoice_number: string | null;
   period_start: string;
   period_end: string;
   subtotal_amount: Numeric;
+  vat_rate_bps: number | null;
+  vat_amount: Numeric | null;
+  total_amount: Numeric | null;
   status: string;
   sent_at: string | null;
+  paid_at: string | null;
 };
 
 type RecentInvoiceRow = InvoiceRow & {
   salons: { name: string } | { name: string }[] | null;
 };
+
+type InvoiceLineRow = {
+  id: string;
+  booking_date: string;
+  service_name_snapshot: string;
+  booking_gross_amount: Numeric;
+  commission_rate_bps: number;
+  commission_amount: Numeric;
+};
+
+// Columns selected wherever an invoice is read (keep in sync with InvoiceRow).
+const INVOICE_COLUMNS =
+  "id, salon_id, invoice_number, period_start, period_end, subtotal_amount, vat_rate_bps, vat_amount, total_amount, status, sent_at, paid_at";
 
 type LegalRow = {
   company_name: string | null;
@@ -215,10 +269,18 @@ function pickActiveContract(
   return candidates[0] ?? null;
 }
 
-/** `salon_invoices` has no number column yet (a planned schema addition); use a
- * short, stable id-derived reference until `invoice_number` lands. */
-function invoiceReference(id: string): string {
-  return id.slice(0, 8).toUpperCase();
+/** Human reference: the assigned `PR-YYYY-NNNN`, or a short id prefix as a
+ * fallback for any legacy row that predates numbering. */
+function invoiceReference(invoiceNumber: string | null, id: string): string {
+  return invoiceNumber ?? id.slice(0, 8).toUpperCase();
+}
+
+/** Payment due date (YYYY-MM-DD) = sent_at + term; null until sent. */
+function dueDateFor(sentAt: string | null): string | null {
+  if (!sentAt) return null;
+  const due = new Date(sentAt);
+  due.setDate(due.getDate() + PAYMENT_TERM_DAYS);
+  return due.toISOString().slice(0, 10);
 }
 
 /** Overdue is derived, never stored: a `sent` invoice past its 14-day term. */
@@ -234,6 +296,11 @@ function deriveInvoiceStatus(
   return status as InvoiceStatus;
 }
 
+/** Month key (YYYY-MM) of an ISO date. */
+function monthOf(iso: string): string {
+  return iso.slice(0, 7);
+}
+
 function mapContract(row: ContractRow): Contract {
   return {
     id: row.id,
@@ -246,13 +313,22 @@ function mapContract(row: ContractRow): Contract {
 }
 
 function mapInvoice(row: InvoiceRow): Invoice {
+  const subtotal = toEuros(row.subtotal_amount);
   return {
     id: row.id,
-    reference: invoiceReference(row.id),
+    reference: invoiceReference(row.invoice_number, row.id),
+    invoiceNumber: row.invoice_number,
     periodStart: row.period_start,
     periodEnd: row.period_end,
-    subtotal: toEuros(row.subtotal_amount),
+    subtotal,
+    vatRateBps: row.vat_rate_bps ?? 0,
+    vatAmount: toEuros(row.vat_amount),
+    // Legacy rows predating the VAT columns fall back to the net subtotal.
+    total: row.total_amount == null ? subtotal : toEuros(row.total_amount),
     status: deriveInvoiceStatus(row.status, row.sent_at),
+    sentAt: row.sent_at,
+    paidAt: row.paid_at,
+    dueDate: dueDateFor(row.sent_at),
   };
 }
 
@@ -281,6 +357,7 @@ function unwrap<T>(
 // ---------------------------------------------------------------------------
 
 export async function getSalons(): Promise<SalonSummary[]> {
+  await requireSuperadmin();
   const supabase = getSupabaseAdmin();
 
   const [salonsRes, profilesRes, contractsRes, feesRes, invoicesRes] =
@@ -308,7 +385,7 @@ export async function getSalons(): Promise<SalonSummary[]> {
       // Ordered newest-first so the first row per salon is its latest invoice.
       supabase
         .from("salon_invoices")
-        .select("id, salon_id, period_start, period_end, subtotal_amount, status, sent_at")
+        .select(INVOICE_COLUMNS)
         .order("period_end", { ascending: false })
         .order("created_at", { ascending: false })
         .returns<InvoiceRow[]>(),
@@ -362,6 +439,7 @@ export async function getSalons(): Promise<SalonSummary[]> {
 }
 
 export async function getSalon(id: string): Promise<SalonDetail | null> {
+  await requireSuperadmin();
   const supabase = getSupabaseAdmin();
 
   const [salonRes, profileRes, legalRes, contractsRes, feesRes, invoicesRes] =
@@ -405,7 +483,7 @@ export async function getSalon(id: string): Promise<SalonDetail | null> {
         .returns<FeeRow[]>(),
       supabase
         .from("salon_invoices")
-        .select("id, salon_id, period_start, period_end, subtotal_amount, status, sent_at")
+        .select(INVOICE_COLUMNS)
         .eq("salon_id", id)
         .order("period_end", { ascending: false })
         .order("created_at", { ascending: false })
@@ -450,6 +528,7 @@ export async function getSalon(id: string): Promise<SalonDetail | null> {
 }
 
 export async function getOverview(): Promise<AdminOverview> {
+  await requireSuperadmin();
   const supabase = getSupabaseAdmin();
 
   const [salonCountRes, activeCountRes, appUserCountRes, feesRes, recentRes] =
@@ -471,9 +550,7 @@ export async function getOverview(): Promise<AdminOverview> {
         .returns<FeeSumRow[]>(),
       supabase
         .from("salon_invoices")
-        .select(
-          "id, salon_id, period_start, period_end, subtotal_amount, status, sent_at, salons(name)",
-        )
+        .select(`${INVOICE_COLUMNS}, salons(name)`)
         .order("created_at", { ascending: false })
         .limit(6)
         .returns<RecentInvoiceRow[]>(),
@@ -492,14 +569,9 @@ export async function getOverview(): Promise<AdminOverview> {
   const recentInvoices = unwrap(recentRes, "salon_invoices").map((row) => {
     const salon = Array.isArray(row.salons) ? row.salons[0] : row.salons;
     return {
-      id: row.id,
-      reference: invoiceReference(row.id),
+      ...mapInvoice(row),
       salonId: row.salon_id,
       salonName: salon?.name ?? "",
-      periodStart: row.period_start,
-      periodEnd: row.period_end,
-      subtotal: toEuros(row.subtotal_amount),
-      status: deriveInvoiceStatus(row.status, row.sent_at),
     };
   });
 
@@ -510,4 +582,124 @@ export async function getOverview(): Promise<AdminOverview> {
     uninvoiced,
     recentInvoices,
   };
+}
+
+/** A single invoice with its frozen line items — the breakdown view. */
+export async function getInvoice(id: string): Promise<InvoiceDetail | null> {
+  await requireSuperadmin();
+  const supabase = getSupabaseAdmin();
+
+  const [invoiceRes, linesRes] = await Promise.all([
+    supabase
+      .from("salon_invoices")
+      .select(`${INVOICE_COLUMNS}, salons(name)`)
+      .eq("id", id)
+      .maybeSingle()
+      .returns<RecentInvoiceRow>(),
+    supabase
+      .from("salon_invoice_lines")
+      .select(
+        "id, booking_date, service_name_snapshot, booking_gross_amount, commission_rate_bps, commission_amount",
+      )
+      .eq("invoice_id", id)
+      .order("booking_date", { ascending: true })
+      .returns<InvoiceLineRow[]>(),
+  ]);
+
+  if (invoiceRes.error)
+    throw new Error(`salon_invoices: ${invoiceRes.error.message}`);
+  const row = invoiceRes.data;
+  if (!row) return null;
+
+  const salon = Array.isArray(row.salons) ? row.salons[0] : row.salons;
+  const lines = unwrap(linesRes, "salon_invoice_lines").map((l) => ({
+    id: l.id,
+    bookingDate: l.booking_date,
+    serviceName: l.service_name_snapshot,
+    grossAmount: toEuros(l.booking_gross_amount),
+    commissionRateBps: l.commission_rate_bps,
+    commissionAmount: toEuros(l.commission_amount),
+  }));
+
+  return {
+    ...mapInvoice(row),
+    salonId: row.salon_id,
+    salonName: salon?.name ?? "",
+    lines,
+  };
+}
+
+/** Every invoice (newest first) + uninvoiced fees grouped by salon and month —
+ * the cross-salon /invoices view. Stray older fees stay visible per the
+ * stragglers note (docs/product-decisions.md → Invoices). */
+export async function getInvoicesPage(): Promise<{
+  invoices: InvoiceListItem[];
+  uninvoiced: SalonUninvoiced[];
+}> {
+  await requireSuperadmin();
+  const supabase = getSupabaseAdmin();
+
+  type UninvoicedFeeRow = {
+    salon_id: string;
+    booking_date: string;
+    commission_amount: Numeric;
+    salons: { name: string } | { name: string }[] | null;
+  };
+
+  const [invoicesRes, feesRes] = await Promise.all([
+    supabase
+      .from("salon_invoices")
+      .select(`${INVOICE_COLUMNS}, salons(name)`)
+      .order("created_at", { ascending: false })
+      .returns<RecentInvoiceRow[]>(),
+    supabase
+      .from("booking_fees")
+      .select("salon_id, booking_date, commission_amount, salons(name)")
+      .is("invoice_id", null)
+      .order("booking_date", { ascending: false })
+      .returns<UninvoicedFeeRow[]>(),
+  ]);
+
+  const invoices = unwrap(invoicesRes, "salon_invoices").map((row) => {
+    const salon = Array.isArray(row.salons) ? row.salons[0] : row.salons;
+    return {
+      ...mapInvoice(row),
+      salonId: row.salon_id,
+      salonName: salon?.name ?? "",
+    };
+  });
+
+  // Group uninvoiced fees: salon -> month -> {count, net}.
+  const bySalon = new Map<
+    string,
+    { name: string; months: Map<string, { feeCount: number; net: number }> }
+  >();
+  for (const fee of unwrap(feesRes, "booking_fees")) {
+    const salon = Array.isArray(fee.salons) ? fee.salons[0] : fee.salons;
+    const entry =
+      bySalon.get(fee.salon_id) ??
+      { name: salon?.name ?? "", months: new Map() };
+    const month = monthOf(fee.booking_date);
+    const m = entry.months.get(month) ?? { feeCount: 0, net: 0 };
+    m.feeCount += 1;
+    m.net += toEuros(fee.commission_amount);
+    entry.months.set(month, m);
+    bySalon.set(fee.salon_id, entry);
+  }
+
+  const uninvoiced: SalonUninvoiced[] = [...bySalon.entries()]
+    .map(([salonId, { name, months }]) => {
+      const monthList = [...months.entries()]
+        .map(([month, v]) => ({ month, ...v }))
+        .sort((a, b) => (a.month < b.month ? 1 : -1));
+      return {
+        salonId,
+        salonName: name,
+        months: monthList,
+        net: monthList.reduce((s, m) => s + m.net, 0),
+      };
+    })
+    .sort((a, b) => b.net - a.net);
+
+  return { invoices, uninvoiced };
 }
