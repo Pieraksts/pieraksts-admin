@@ -5,12 +5,14 @@
  * the service-role client (bypasses RLS), mirroring the read layer in
  * `src/lib/data/salons.ts`.
  *
- * NOTE: there is no auth yet (separate phase — see docs/auth-and-access.md), so
- * these mutations are currently unguarded. That's acceptable for local-only use;
- * auth gates any deploy.
+ * Every action calls `requireSuperadmin()` first: server actions are reachable
+ * as POST endpoints independent of any page, so each must enforce authorization
+ * itself (docs/auth-and-access.md — never rely on the proxy alone). The resolved
+ * user id is the audit attribution written to `salon_contract_events.created_by`.
  */
 import { revalidatePath } from "next/cache";
 
+import { requireSuperadmin } from "@/lib/auth/require-superadmin";
 import type { ClientStatus } from "@/lib/data/salons";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -28,7 +30,32 @@ function revalidateSalon(salonId: string) {
   revalidatePath("/");
 }
 
+/**
+ * Append a row to `salon_contract_events` for audit attribution. `createdBy` is
+ * the superadmin's auth uid from `requireSuperadmin()`; the column is nullable,
+ * so an event log failure must never roll back the underlying action — we record
+ * it best-effort and swallow errors after logging.
+ */
+async function logContractEvent(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  contractId: string,
+  eventType: "created" | "activated" | "terminated",
+  createdBy: string,
+  opts?: { description?: string },
+) {
+  const { error } = await supabase.from("salon_contract_events").insert({
+    contract_id: contractId,
+    event_type: eventType,
+    description: opts?.description ?? null,
+    created_by: createdBy,
+  });
+  if (error) {
+    console.error(`logContractEvent(${eventType}): ${error.message}`);
+  }
+}
+
 export async function setClientStatus(salonId: string, status: ClientStatus) {
+  await requireSuperadmin();
   if (!CLIENT_STATUSES.includes(status)) {
     throw new Error(`Invalid client status: ${status}`);
   }
@@ -46,6 +73,7 @@ export async function setClientStatus(salonId: string, status: ClientStatus) {
 }
 
 export async function setVisibility(salonId: string, isPublic: boolean) {
+  await requireSuperadmin();
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("salons")
@@ -76,6 +104,7 @@ export async function saveLegalProfile(
   salonId: string,
   input: LegalProfileInput,
 ) {
+  await requireSuperadmin();
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from("salon_legal_profiles").upsert(
     {
@@ -103,6 +132,7 @@ export type NewContractInput = {
 };
 
 export async function createContract(salonId: string, input: NewContractInput) {
+  const { userId } = await requireSuperadmin();
   if (
     !Number.isInteger(input.commissionRateBps) ||
     input.commissionRateBps < 0 ||
@@ -141,15 +171,23 @@ export async function createContract(salonId: string, input: NewContractInput) {
   if (versionError) throw new Error(`createContract: ${versionError.message}`);
   const nextVersion = (latest?.[0]?.version ?? 0) + 1;
 
-  const { error } = await supabase.from("salon_contracts").insert({
-    salon_id: salonId,
-    version: nextVersion,
-    commission_rate_bps: input.commissionRateBps,
-    start_date: input.startDate,
-    end_date: input.endDate,
-    status: input.status,
-  });
+  const { data: created, error } = await supabase
+    .from("salon_contracts")
+    .insert({
+      salon_id: salonId,
+      version: nextVersion,
+      commission_rate_bps: input.commissionRateBps,
+      start_date: input.startDate,
+      end_date: input.endDate,
+      status: input.status,
+    })
+    .select("id")
+    .single();
   if (error) throw new Error(`createContract: ${error.message}`);
+
+  await logContractEvent(supabase, created.id, "created", userId, {
+    description: `Created v${nextVersion} at ${input.commissionRateBps} bps`,
+  });
 
   revalidateSalon(salonId);
 }
@@ -168,6 +206,7 @@ function isoDayBefore(iso: string): string {
  * (docs/product-decisions.md → Contracts).
  */
 export async function activateContract(salonId: string, contractId: string) {
+  const { userId } = await requireSuperadmin();
   const supabase = getSupabaseAdmin();
 
   const { data: target, error: targetError } = await supabase
@@ -197,6 +236,9 @@ export async function activateContract(salonId: string, contractId: string) {
       .update(update)
       .eq("id", prior.id);
     if (error) throw new Error(`activateContract (terminate prior): ${error.message}`);
+    await logContractEvent(supabase, prior.id, "terminated", userId, {
+      description: "Auto-terminated: superseded by a newly activated contract",
+    });
   }
 
   const { error } = await supabase
@@ -205,10 +247,13 @@ export async function activateContract(salonId: string, contractId: string) {
     .eq("id", contractId);
   if (error) throw new Error(`activateContract: ${error.message}`);
 
+  await logContractEvent(supabase, contractId, "activated", userId);
+
   revalidateSalon(salonId);
 }
 
 export async function terminateContract(salonId: string, contractId: string) {
+  const { userId } = await requireSuperadmin();
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("salon_contracts")
@@ -216,5 +261,8 @@ export async function terminateContract(salonId: string, contractId: string) {
     .eq("id", contractId)
     .eq("salon_id", salonId);
   if (error) throw new Error(`terminateContract: ${error.message}`);
+
+  await logContractEvent(supabase, contractId, "terminated", userId);
+
   revalidateSalon(salonId);
 }

@@ -1,11 +1,18 @@
 import Image from "next/image";
 import Link from "next/link";
-import { UserCircle } from "@phosphor-icons/react/dist/ssr";
+import { SignOut, UserCircle } from "@phosphor-icons/react/dist/ssr";
 
 import { MobileNav } from "@/components/admin/mobile-nav";
 import { ThemeToggle } from "@/components/admin/theme-toggle";
+import { Button } from "@/components/ui/button";
+import { signOut } from "@/lib/actions/auth";
+import { requireSuperadmin } from "@/lib/auth/require-superadmin";
 
-export function Topbar() {
+export async function Topbar() {
+  // Resolves the signed-in superadmin (and re-asserts the gate at the layout
+  // level). Memoized with the page's own requireSuperadmin() call.
+  const { email } = await requireSuperadmin();
+
   return (
     <header className="sticky top-0 z-20 border-b border-hairline bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="flex h-16 items-center justify-between px-4 sm:px-6">
@@ -26,11 +33,25 @@ export function Topbar() {
 
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
-          {/* Placeholder for the eventual signed-in owner. No auth yet. */}
-          <span className="flex items-center gap-2 rounded-full border border-hairline bg-warm-strong py-1 pr-3 pl-1.5 text-[13px] font-medium text-ink-muted">
-            <UserCircle size={20} weight="duotone" className="text-brand" />
-            Owner
+          <span className="flex max-w-[12rem] items-center gap-2 rounded-full border border-hairline bg-warm-strong py-1 pr-3 pl-1.5 text-[13px] font-medium text-ink-muted">
+            <UserCircle
+              size={20}
+              weight="duotone"
+              className="shrink-0 text-brand"
+            />
+            <span className="truncate">{email ?? "Signed in"}</span>
           </span>
+          <form action={signOut}>
+            <Button
+              type="submit"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <SignOut size={18} weight="bold" />
+            </Button>
+          </form>
         </div>
       </div>
       <MobileNav />
