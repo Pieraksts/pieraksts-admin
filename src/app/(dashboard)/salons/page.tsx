@@ -2,13 +2,13 @@ import Link from "next/link";
 import { Plus } from "@phosphor-icons/react/dist/ssr";
 
 import { PageHeader } from "@/components/admin/page-header";
+import { Th } from "@/components/admin/section";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -89,21 +89,5 @@ export default async function SalonsPage() {
         </Table>
       </div>
     </div>
-  );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <TableHead
-      className={`h-11 text-[11px] font-semibold tracking-[0.1em] text-ink-soft uppercase ${className}`}
-    >
-      {children}
-    </TableHead>
   );
 }
