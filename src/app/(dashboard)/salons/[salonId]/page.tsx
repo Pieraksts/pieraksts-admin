@@ -1,7 +1,13 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FilePlus } from "@phosphor-icons/react/dist/ssr";
+import {
+  CheckCircle,
+  FilePlus,
+  FileText,
+  IdentificationCard,
+  Receipt,
+} from "@phosphor-icons/react/dist/ssr";
 
 import { ClientStatusSelect } from "@/components/admin/client-status-select";
 import { ContractActions } from "@/components/admin/contract-actions";
@@ -9,6 +15,7 @@ import { GenerateInvoice } from "@/components/admin/generate-invoice";
 import { InvoiceActions } from "@/components/admin/invoice-actions";
 import { LegalProfileDialog } from "@/components/admin/legal-profile-dialog";
 import { PageHeader } from "@/components/admin/page-header";
+import { EmptyState, Field, Section, Th } from "@/components/admin/section";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { VisibilityToggle } from "@/components/admin/visibility-toggle";
 import { Button } from "@/components/ui/button";
@@ -16,7 +23,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -35,6 +41,10 @@ export default async function SalonDetailPage(
   if (!salon) notFound();
 
   const uninvoicedFees = salon.bookingFees.filter((f) => !f.invoiced);
+  const uninvoicedTotal = uninvoicedFees.reduce(
+    (s, f) => s + f.commissionAmount,
+    0,
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -52,7 +62,7 @@ export default async function SalonDetailPage(
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2 text-[14px] text-ink-muted">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-[14px] text-ink-muted">
         <ClientStatusSelect
           salonId={salon.id}
           status={salon.clientStatus}
@@ -84,7 +94,7 @@ export default async function SalonDetailPage(
         }
       >
         {salon.legalProfile ? (
-          <dl className="grid gap-x-8 gap-y-4 px-5 py-5 sm:grid-cols-2">
+          <dl className="grid gap-x-8 gap-y-5 px-5 py-5 sm:grid-cols-2">
             <Field label="Company name" value={salon.legalProfile.companyName} />
             <Field
               label="Registration no."
@@ -109,52 +119,64 @@ export default async function SalonDetailPage(
             />
           </dl>
         ) : (
-          <EmptyState message="No legal profile yet. Use “Add legal profile” above — it's required before drafting a contract." />
+          <EmptyState
+            icon={IdentificationCard}
+            title="No legal profile yet"
+            description="Add the company's legal details with “Add legal profile” above — it's required before drafting a contract."
+          />
         )}
       </Section>
 
       {/* Contracts */}
       <Section title="Contract history">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-hairline hover:bg-transparent">
-              <Th className="pl-5">Version</Th>
-              <Th>Commission</Th>
-              <Th>Start</Th>
-              <Th>End</Th>
-              <Th>Status</Th>
-              <Th className="pr-5 text-right">Actions</Th>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {salon.contracts.map((c) => (
-              <TableRow key={c.id} className="border-hairline">
-                <TableCell className="pl-5 font-mono text-[13px] tabular-nums">
-                  v{c.version}
-                </TableCell>
-                <TableCell className="text-[13px] text-foreground">
-                  {formatRate(c.commissionRateBps)}
-                </TableCell>
-                <TableCell className="text-[13px] text-ink-muted">
-                  {formatDate(c.startDate)}
-                </TableCell>
-                <TableCell className="text-[13px] text-ink-muted">
-                  {formatDate(c.endDate)}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={c.status} />
-                </TableCell>
-                <TableCell className="pr-5 text-right">
-                  <ContractActions
-                    salonId={salon.id}
-                    contract={c}
-                    activeContract={salon.activeContract}
-                  />
-                </TableCell>
+        {salon.contracts.length === 0 ? (
+          <EmptyState
+            icon={FileText}
+            title="No contracts yet"
+            description="Draft the first versioned contract with “New contract” above. Billing starts once one is active."
+          />
+        ) : (
+          <Table className="[&_td]:py-3">
+            <TableHeader>
+              <TableRow className="border-hairline hover:bg-transparent">
+                <Th className="pl-5">Version</Th>
+                <Th>Commission</Th>
+                <Th>Start</Th>
+                <Th>End</Th>
+                <Th>Status</Th>
+                <Th className="pr-5 text-right">Actions</Th>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {salon.contracts.map((c) => (
+                <TableRow key={c.id} className="border-hairline">
+                  <TableCell className="pl-5 font-mono text-[13px] tabular-nums">
+                    v{c.version}
+                  </TableCell>
+                  <TableCell className="text-[13px] text-foreground">
+                    {formatRate(c.commissionRateBps)}
+                  </TableCell>
+                  <TableCell className="text-[13px] whitespace-nowrap text-ink-muted">
+                    {formatDate(c.startDate)}
+                  </TableCell>
+                  <TableCell className="text-[13px] whitespace-nowrap text-ink-muted">
+                    {formatDate(c.endDate)}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={c.status} />
+                  </TableCell>
+                  <TableCell className="pr-5 text-right">
+                    <ContractActions
+                      salonId={salon.id}
+                      contract={c}
+                      activeContract={salon.activeContract}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </Section>
 
       {/* Uninvoiced booking fees, grouped by month so stragglers stay visible */}
@@ -164,9 +186,7 @@ export default async function SalonDetailPage(
           <div className="flex items-center gap-3">
             {uninvoicedFees.length > 0 ? (
               <span className="font-mono text-[13px] tabular-nums text-ink-muted">
-                {formatMoney(
-                  uninvoicedFees.reduce((s, f) => s + f.commissionAmount, 0),
-                )}
+                {formatMoney(uninvoicedTotal)}
               </span>
             ) : null}
             <GenerateInvoice
@@ -179,9 +199,13 @@ export default async function SalonDetailPage(
         }
       >
         {uninvoicedFees.length === 0 ? (
-          <EmptyState message="No fees waiting to be invoiced." />
+          <EmptyState
+            icon={CheckCircle}
+            title="All caught up"
+            description="No fees waiting to be invoiced. New ones appear here as bookings complete under an active contract."
+          />
         ) : (
-          <Table>
+          <Table className="[&_td]:py-3">
             <TableHeader>
               <TableRow className="border-hairline hover:bg-transparent">
                 <Th className="pl-5">Date</Th>
@@ -195,20 +219,22 @@ export default async function SalonDetailPage(
               {groupFeesByMonth(uninvoicedFees).map((group) => (
                 <Fragment key={group.month}>
                   <TableRow className="border-hairline bg-warm-strong hover:bg-warm-strong">
-                    <TableCell
-                      colSpan={4}
-                      className="pl-5 text-[12px] font-semibold tracking-[0.04em] text-ink-muted uppercase"
-                    >
-                      {monthLabel(group.month)} · {group.fees.length}{" "}
-                      {group.fees.length === 1 ? "fee" : "fees"}
+                    <TableCell colSpan={4} className="pl-5">
+                      <span className="text-[12px] font-semibold tracking-[0.04em] text-foreground uppercase">
+                        {monthLabel(group.month)}
+                      </span>
+                      <span className="ml-2 text-[12px] text-ink-soft">
+                        {group.fees.length}{" "}
+                        {group.fees.length === 1 ? "fee" : "fees"}
+                      </span>
                     </TableCell>
-                    <TableCell className="pr-5 text-right font-mono text-[12px] tabular-nums text-ink-muted">
+                    <TableCell className="pr-5 text-right font-mono text-[12px] font-semibold tabular-nums text-ink-muted">
                       {formatMoney(group.subtotal)}
                     </TableCell>
                   </TableRow>
                   {group.fees.map((f) => (
                     <TableRow key={f.id} className="border-hairline">
-                      <TableCell className="pl-5 text-[13px] text-ink-muted">
+                      <TableCell className="pl-5 text-[13px] whitespace-nowrap text-ink-muted">
                         {formatDate(f.bookingDate)}
                       </TableCell>
                       <TableCell className="text-[13px] text-foreground">
@@ -235,9 +261,13 @@ export default async function SalonDetailPage(
       {/* Invoices */}
       <Section title="Invoices">
         {salon.invoices.length === 0 ? (
-          <EmptyState message="No invoices generated yet." />
+          <EmptyState
+            icon={Receipt}
+            title="No invoices yet"
+            description="Generate one from the uninvoiced fees above, a calendar month at a time."
+          />
         ) : (
-          <Table>
+          <Table className="[&_td]:py-3">
             <TableHeader>
               <TableRow className="border-hairline hover:bg-transparent">
                 <Th className="pl-5">Number</Th>
@@ -255,12 +285,12 @@ export default async function SalonDetailPage(
                   <TableCell className="pl-5">
                     <Link
                       href={`/invoices/${inv.id}`}
-                      className="font-mono text-[13px] tabular-nums font-semibold text-brand-strong hover:text-brand hover:underline"
+                      className="font-mono text-[13px] font-semibold tabular-nums text-brand-strong hover:text-brand hover:underline"
                     >
                       {inv.reference}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-[13px] text-ink-muted">
+                  <TableCell className="text-[13px] whitespace-nowrap text-ink-muted">
                     {formatDate(inv.periodStart)} – {formatDate(inv.periodEnd)}
                   </TableCell>
                   <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
@@ -269,7 +299,7 @@ export default async function SalonDetailPage(
                   <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
                     {inv.vatRateBps > 0 ? formatMoney(inv.vatAmount) : "—"}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-[13px] tabular-nums font-semibold text-foreground">
+                  <TableCell className="text-right font-mono text-[13px] font-semibold tabular-nums text-foreground">
                     {formatMoney(inv.total)}
                   </TableCell>
                   <TableCell>
@@ -284,66 +314,6 @@ export default async function SalonDetailPage(
           </Table>
         )}
       </Section>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="overflow-hidden rounded-xl border border-hairline bg-card">
-      <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-3.5">
-        <h2 className="display-type text-[15px] font-bold tracking-[-0.01em]">
-          {title}
-        </h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <TableHead
-      className={`h-11 text-[11px] font-semibold tracking-[0.1em] text-ink-soft uppercase ${className}`}
-    >
-      {children}
-    </TableHead>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div>
-      <dt className="eyebrow mb-1.5">{label}</dt>
-      <dd className="text-[14px] text-foreground">{value ?? "—"}</dd>
-    </div>
-  );
-}
-
-function EmptyState({ message, cta }: { message: string; cta?: string }) {
-  return (
-    <div className="flex flex-col items-start gap-3 px-5 py-8">
-      <p className="text-[14px] text-ink-muted">{message}</p>
-      {cta ? (
-        <Button variant="outline" size="sm" disabled title="Coming soon">
-          {cta}
-        </Button>
-      ) : null}
     </div>
   );
 }
