@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 
 import { PageHeader } from "@/components/admin/page-header";
+import { EmptyState } from "@/components/admin/section";
 import { StatCard } from "@/components/admin/stat-card";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { getOverview, getSalons } from "@/lib/data/salons";
@@ -63,11 +64,11 @@ export default async function OverviewPage() {
             </h2>
           </div>
           {overview.recentInvoices.length === 0 ? (
-            <div className="px-5 py-8">
-              <p className="text-[14px] text-ink-muted">
-                No invoices generated yet.
-              </p>
-            </div>
+            <EmptyState
+              icon={Receipt}
+              title="No invoices yet"
+              description="Generated invoices show up here, newest first."
+            />
           ) : (
             <ul className="divide-y divide-hairline">
               {overview.recentInvoices.map((inv) => (
@@ -116,9 +117,10 @@ export default async function OverviewPage() {
             </Link>
           </div>
           {recentSalons.length === 0 ? (
-            <div className="px-5 py-8">
-              <p className="text-[14px] text-ink-muted">No salons yet.</p>
-            </div>
+            <EmptyState
+              icon={Buildings}
+              description="Salons self-register in the app and appear here."
+            />
           ) : (
             <ul className="divide-y divide-hairline">
               {recentSalons.map((salon) => (

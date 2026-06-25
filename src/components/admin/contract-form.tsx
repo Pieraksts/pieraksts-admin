@@ -7,6 +7,7 @@ import { Info } from "@phosphor-icons/react";
 
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -120,23 +121,23 @@ export function ContractForm({
             <Label htmlFor="start">
               Start date <span className="text-brand">*</span>
             </Label>
-            <Input
+            <DatePicker
               id="start"
-              type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              aria-invalid={Boolean(dateError)}
+              onChange={setStartDate}
+              ariaInvalid={Boolean(dateError)}
             />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="end">End date</Label>
-            <Input
+            <DatePicker
               id="end"
-              type="date"
               value={endDate}
+              onChange={setEndDate}
               min={startDate || undefined}
-              onChange={(e) => setEndDate(e.target.value)}
-              aria-invalid={Boolean(dateError)}
+              clearable
+              placeholder="Open-ended"
+              ariaInvalid={Boolean(dateError)}
             />
           </div>
         </div>

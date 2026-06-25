@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { Receipt } from "@phosphor-icons/react/dist/ssr";
+import { CheckCircle, Receipt } from "@phosphor-icons/react/dist/ssr";
 
 import { PageHeader } from "@/components/admin/page-header";
+import { EmptyState, Section, Th } from "@/components/admin/section";
 import { StatusBadge } from "@/components/admin/status-badge";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -48,25 +48,24 @@ export default async function InvoicesPage() {
         }
       >
         {uninvoiced.length === 0 ? (
-          <div className="px-5 py-8">
-            <p className="text-[14px] text-ink-muted">
-              No uninvoiced fees. Generate invoices from a salon once it has
-              completed-booking fees under an active contract.
-            </p>
-          </div>
+          <EmptyState
+            icon={CheckCircle}
+            title="All caught up"
+            description="Every fee has been invoiced. New ones appear here as bookings complete under an active contract."
+          />
         ) : (
           <ul className="divide-y divide-hairline">
             {uninvoiced.map((salon) => (
               <li key={salon.salonId}>
                 <Link
                   href={`/salons/${salon.salonId}`}
-                  className="flex items-start justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-warm-strong"
+                  className="flex items-start justify-between gap-4 px-5 py-4 transition-colors hover:bg-warm-strong"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-[14px] font-semibold text-foreground">
                       {salon.salonName}
                     </p>
-                    <p className="mt-0.5 text-[12px] text-ink-soft">
+                    <p className="mt-1 text-[12px] text-ink-soft">
                       {salon.months
                         .map(
                           (m) =>
@@ -90,17 +89,13 @@ export default async function InvoicesPage() {
       {/* All invoices */}
       <Section title="All invoices">
         {invoices.length === 0 ? (
-          <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-            <span className="flex size-12 items-center justify-center rounded-full bg-warm-strong text-brand">
-              <Receipt size={24} weight="duotone" />
-            </span>
-            <p className="max-w-sm text-[14px] leading-6 text-ink-muted">
-              No invoices generated yet. They&apos;re created from a salon&apos;s
-              uninvoiced fees, one month at a time.
-            </p>
-          </div>
+          <EmptyState
+            icon={Receipt}
+            title="No invoices yet"
+            description="Invoices are created from a salon's uninvoiced fees, one month at a time."
+          />
         ) : (
-          <Table>
+          <Table className="[&_td]:py-3">
             <TableHeader>
               <TableRow className="border-hairline hover:bg-transparent">
                 <Th className="pl-5">Number</Th>
@@ -118,7 +113,7 @@ export default async function InvoicesPage() {
                   <TableCell className="pl-5">
                     <Link
                       href={`/invoices/${inv.id}`}
-                      className="font-mono text-[13px] tabular-nums font-semibold text-brand-strong hover:text-brand hover:underline"
+                      className="font-mono text-[13px] font-semibold tabular-nums text-brand-strong hover:text-brand hover:underline"
                     >
                       {inv.reference}
                     </Link>
@@ -131,7 +126,7 @@ export default async function InvoicesPage() {
                       {inv.salonName}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-[13px] text-ink-muted">
+                  <TableCell className="text-[13px] whitespace-nowrap text-ink-muted">
                     {formatDate(inv.periodStart)} – {formatDate(inv.periodEnd)}
                   </TableCell>
                   <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
@@ -140,7 +135,7 @@ export default async function InvoicesPage() {
                   <TableCell className="text-right font-mono text-[13px] tabular-nums text-ink-muted">
                     {inv.vatRateBps > 0 ? formatMoney(inv.vatAmount) : "—"}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-[13px] tabular-nums font-semibold text-foreground">
+                  <TableCell className="text-right font-mono text-[13px] font-semibold tabular-nums text-foreground">
                     {formatMoney(inv.total)}
                   </TableCell>
                   <TableCell className="pr-5 text-right">
@@ -153,43 +148,5 @@ export default async function InvoicesPage() {
         )}
       </Section>
     </div>
-  );
-}
-
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="overflow-hidden rounded-xl border border-hairline bg-card">
-      <div className="flex items-center justify-between gap-3 border-b border-hairline px-5 py-3.5">
-        <h2 className="display-type text-[15px] font-bold tracking-[-0.01em]">
-          {title}
-        </h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Th({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <TableHead
-      className={`h-11 text-[11px] font-semibold tracking-[0.1em] text-ink-soft uppercase ${className}`}
-    >
-      {children}
-    </TableHead>
   );
 }

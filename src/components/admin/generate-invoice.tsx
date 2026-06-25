@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Receipt } from "@phosphor-icons/react";
 
+import { TotalRow } from "@/components/admin/section";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,11 +15,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MonthPicker } from "@/components/ui/month-picker";
 import { generateInvoice } from "@/lib/actions/invoices";
 import type { BookingFee } from "@/lib/data/salons";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatRate } from "@/lib/format";
 
 /** Round to euro cents the same way the DB does (round-half-up at 2 dp). */
 function roundEuro(value: number): number {
@@ -122,50 +123,49 @@ export function GenerateInvoice({
           </DialogHeader>
 
           <div className="grid gap-2">
-            <Label htmlFor="invoice-month">Month</Label>
-            <Input
+            <Label htmlFor="invoice-month">Month to invoice</Label>
+            <MonthPicker
               id="invoice-month"
-              type="month"
               value={ym}
               max={lastMonthYM()}
-              onChange={(e) => setYm(e.target.value || lastMonthYM())}
+              onChange={setYm}
             />
           </div>
 
           <div className="rounded-lg border border-hairline bg-warm p-4">
-            <p className="eyebrow mb-2">{monthLabel(ym)}</p>
-            {hasFees ? (
-              <p className="text-[14px] text-foreground">
-                <span className="font-semibold">
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <p className="eyebrow">{monthLabel(ym)}</p>
+              {hasFees ? (
+                <span className="font-mono text-[12px] tabular-nums text-ink-muted">
                   {preview.count} {preview.count === 1 ? "fee" : "fees"}
                 </span>
-                ,{" "}
-                <span className="font-mono tabular-nums">
-                  {formatMoney(preview.net)}
-                </span>{" "}
-                net
+              ) : null}
+            </div>
+            {hasFees ? (
+              <div className="space-y-2">
+                <TotalRow label="Net commission" value={formatMoney(preview.net)} />
                 {vatRegistered ? (
-                  <>
-                    {" + "}
-                    <span className="font-mono tabular-nums">
-                      {formatMoney(preview.vat)}
-                    </span>{" "}
-                    VAT
-                  </>
-                ) : null}{" "}
-                ={" "}
-                <span className="font-mono font-semibold tabular-nums">
-                  {formatMoney(preview.total)}
-                </span>
-                {!vatRegistered ? (
-                  <span className="mt-1 block text-[12px] text-ink-soft">
-                    Not VAT liable — no VAT applied.
-                  </span>
+                  <TotalRow
+                    label={`VAT (${formatRate(vatRateBps)})`}
+                    value={formatMoney(preview.vat)}
+                  />
                 ) : null}
-              </p>
+                <div className="border-t border-hairline pt-2">
+                  <TotalRow
+                    label="Total"
+                    value={formatMoney(preview.total)}
+                    strong
+                  />
+                </div>
+                {!vatRegistered ? (
+                  <p className="pt-0.5 text-[12px] text-ink-soft">
+                    Not VAT liable — no VAT applied.
+                  </p>
+                ) : null}
+              </div>
             ) : (
-              <p className="text-[14px] text-ink-muted">
-                No uninvoiced fees in {monthLabel(ym)}.
+              <p className="text-[13px] text-ink-muted">
+                No uninvoiced fees in this month — pick another to invoice.
               </p>
             )}
           </div>
@@ -181,7 +181,9 @@ export function GenerateInvoice({
             <Button onClick={confirm} disabled={!hasFees || pending}>
               {pending
                 ? "Generating…"
-                : `Generate ${formatMoney(preview.total)} invoice`}
+                : hasFees
+                  ? `Generate ${formatMoney(preview.total)} invoice`
+                  : "Generate invoice"}
             </Button>
           </DialogFooter>
         </DialogContent>
