@@ -133,6 +133,7 @@ export type SalonSummary = {
   city: string;
   clientStatus: ClientStatus;
   isPublic: boolean;
+  isFeatured: boolean;
   activeContract: Contract | null;
   uninvoiced: number;
   latestInvoiceStatus: InvoiceStatus | null;
@@ -167,6 +168,7 @@ type SalonRow = {
   name: string;
   city: string | null;
   is_public: boolean;
+  is_featured: boolean;
 };
 
 type AdminProfileRow = { salon_id: string; client_status: string };
@@ -364,7 +366,7 @@ export async function getSalons(): Promise<SalonSummary[]> {
     await Promise.all([
       supabase
         .from("salons")
-        .select("id, name, city, is_public")
+        .select("id, name, city, is_public, is_featured")
         .order("name")
         .returns<SalonRow[]>(),
       supabase
@@ -432,6 +434,7 @@ export async function getSalons(): Promise<SalonSummary[]> {
     city: s.city ?? "",
     clientStatus: statusBySalon.get(s.id) ?? "new",
     isPublic: s.is_public,
+    isFeatured: s.is_featured,
     activeContract: pickActiveContract(contractsBySalon.get(s.id) ?? []),
     uninvoiced: uninvoicedBySalon.get(s.id) ?? 0,
     latestInvoiceStatus: latestInvoiceBySalon.get(s.id) ?? null,
@@ -446,7 +449,7 @@ export async function getSalon(id: string): Promise<SalonDetail | null> {
     await Promise.all([
       supabase
         .from("salons")
-        .select("id, name, city, is_public")
+        .select("id, name, city, is_public, is_featured")
         .eq("id", id)
         .maybeSingle()
         .returns<SalonRow>(),
@@ -517,6 +520,7 @@ export async function getSalon(id: string): Promise<SalonDetail | null> {
     city: salon.city ?? "",
     clientStatus: (profileRes.data?.client_status as ClientStatus) ?? "new",
     isPublic: salon.is_public,
+    isFeatured: salon.is_featured,
     activeContract: pickActiveContract(contracts),
     uninvoiced: bookingFees.reduce((sum, f) => sum + f.commissionAmount, 0),
     latestInvoiceStatus: invoices[0]?.status ?? null,

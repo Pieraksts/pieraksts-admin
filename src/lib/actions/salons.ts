@@ -84,6 +84,22 @@ export async function setVisibility(salonId: string, isPublic: boolean) {
   revalidateSalon(salonId);
 }
 
+/**
+ * Sponsored placement in the booking app's home "Featured" rail. Admin-only;
+ * unlike visibility, the salon owner has no control over this flag.
+ */
+export async function setFeatured(salonId: string, isFeatured: boolean) {
+  await requireSuperadmin();
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("salons")
+    .update({ is_featured: isFeatured })
+    .eq("id", salonId);
+
+  if (error) throw new Error(`setFeatured: ${error.message}`);
+  revalidateSalon(salonId);
+}
+
 export type LegalProfileInput = {
   companyName: string;
   registrationNumber: string;
