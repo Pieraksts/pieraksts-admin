@@ -127,12 +127,32 @@ export type SalonUninvoiced = {
   net: number;
 };
 
+/**
+ * `RDY-1`: marketplace visibility is derived by the backend from owner
+ * publication intent, Publication Readiness, entitlement, and Moderation
+ * Suspension. Admin presents that derived state and controls only suspension.
+ */
+export type SalonVisibility = {
+  state:
+    | "published"
+    | "owner-hidden"
+    | "no-entitlement"
+    | "not-ready"
+    | "suspended";
+  isMarketplaceVisible: boolean;
+  isReady: boolean;
+  isEntitled: boolean;
+  isModerationSuspended: boolean;
+  moderationReason: string | null;
+  moderationSuspendedAt: string | null;
+};
+
 export type SalonSummary = {
   id: string;
   name: string;
   city: string;
   clientStatus: ClientStatus;
-  isPublic: boolean;
+  visibility: SalonVisibility;
   isFeatured: boolean;
   activeContract: Contract | null;
   uninvoiced: number;
@@ -167,9 +187,44 @@ type SalonRow = {
   id: string;
   name: string;
   city: string | null;
-  is_public: boolean;
   is_featured: boolean;
 };
+
+type AdminSalonVisibilityRow = {
+  salon_id: string;
+  visibility_state: SalonVisibility["state"];
+  is_marketplace_visible: boolean;
+  is_ready: boolean;
+  is_entitled: boolean;
+  is_moderation_suspended: boolean;
+  owner_intent: "published" | "hidden";
+  readiness_blockers: { code: string; destination: string }[];
+  moderation_reason: string | null;
+  moderation_suspended_at: string | null;
+};
+
+const UNKNOWN_VISIBILITY: SalonVisibility = {
+  state: "not-ready",
+  isMarketplaceVisible: false,
+  isReady: false,
+  isEntitled: false,
+  isModerationSuspended: false,
+  moderationReason: null,
+  moderationSuspendedAt: null,
+};
+
+function mapVisibility(row: AdminSalonVisibilityRow | undefined): SalonVisibility {
+  if (!row) return UNKNOWN_VISIBILITY;
+  return {
+    state: row.visibility_state,
+    isMarketplaceVisible: row.is_marketplace_visible,
+    isReady: row.is_ready,
+    isEntitled: row.is_entitled,
+    isModerationSuspended: row.is_moderation_suspended,
+    moderationReason: row.moderation_reason,
+    moderationSuspendedAt: row.moderation_suspended_at,
+  };
+}
 
 type AdminProfileRow = { salon_id: string; client_status: string };
 
@@ -362,13 +417,15 @@ export async function getSalons(): Promise<SalonSummary[]> {
   await requireSuperadmin();
   const supabase = getSupabaseAdmin();
 
-  const [salonsRes, profilesRes, contractsRes, feesRes, invoicesRes] =
+  const [salonsRes, visibilityRes, profilesRes, contractsRes, feesRes, invoicesRes] =
     await Promise.all([
       supabase
         .from("salons")
-        .select("id, name, city, is_public, is_featured")
+        .select("id, name, city, is_featured")
         .order("name")
         .returns<SalonRow[]>(),
+      // `RDY-1`: one canonical derived-visibility read, never the replaced flag.
+      supabase.rpc("get_admin_salon_visibility", { p_salon_ids: null }),
       supabase
         .from("salon_admin_profiles")
         .select("salon_id, client_status")
@@ -428,12 +485,17 @@ export async function getSalons(): Promise<SalonSummary[]> {
     }
   }
 
+  const visibilityRows = (visibilityRes.data ?? []) as AdminSalonVisibilityRow[];
+  const visibilityBySalon = new Map(
+    visibilityRows.map((row) => [row.salon_id, row] as const),
+  );
+
   return salons.map((s) => ({
     id: s.id,
     name: s.name,
     city: s.city ?? "",
     clientStatus: statusBySalon.get(s.id) ?? "new",
-    isPublic: s.is_public,
+    visibility: mapVisibility(visibilityBySalon.get(s.id)),
     isFeatured: s.is_featured,
     activeContract: pickActiveContract(contractsBySalon.get(s.id) ?? []),
     uninvoiced: uninvoicedBySalon.get(s.id) ?? 0,
@@ -445,14 +507,16 @@ export async function getSalon(id: string): Promise<SalonDetail | null> {
   await requireSuperadmin();
   const supabase = getSupabaseAdmin();
 
-  const [salonRes, profileRes, legalRes, contractsRes, feesRes, invoicesRes] =
+  const [salonRes, visibilityRes, profileRes, legalRes, contractsRes, feesRes, invoicesRes] =
     await Promise.all([
       supabase
         .from("salons")
-        .select("id, name, city, is_public, is_featured")
+        .select("id, name, city, is_featured")
         .eq("id", id)
         .maybeSingle()
         .returns<SalonRow>(),
+      // `RDY-1`: one canonical derived-visibility read, never the replaced flag.
+      supabase.rpc("get_admin_salon_visibility", { p_salon_ids: [id] }),
       supabase
         .from("salon_admin_profiles")
         .select("salon_id, client_status")
@@ -519,7 +583,9 @@ export async function getSalon(id: string): Promise<SalonDetail | null> {
     name: salon.name,
     city: salon.city ?? "",
     clientStatus: (profileRes.data?.client_status as ClientStatus) ?? "new",
-    isPublic: salon.is_public,
+    visibility: mapVisibility(
+      ((visibilityRes.data ?? []) as AdminSalonVisibilityRow[])[0],
+    ),
     isFeatured: salon.is_featured,
     activeContract: pickActiveContract(contracts),
     uninvoiced: bookingFees.reduce((sum, f) => sum + f.commissionAmount, 0),

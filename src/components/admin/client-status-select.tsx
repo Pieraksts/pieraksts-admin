@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import {
   setClientStatus,
-  setVisibility,
   terminateContract,
 } from "@/lib/actions/salons";
 import type { ClientStatus, Contract } from "@/lib/data/salons";
@@ -33,22 +32,27 @@ const OPTIONS: { value: ClientStatus; label: string }[] = [
   { value: "terminated", label: "Terminated" },
 ];
 
+/**
+ * `RDY-1`: the commercial client status no longer writes marketplace
+ * visibility. Publication is derived from owner intent, Publication Readiness,
+ * and entitlement, and the only admin override is Moderation Suspension, which
+ * lives in its own control. Terminating a client is a commercial decision, not
+ * a moderation action. (The commission/contract model itself is replaced in
+ * `SUB-1`; only the visibility coupling is removed here.)
+ */
 export function ClientStatusSelect({
   salonId,
   status,
   activeContract,
-  isPublic,
 }: {
   salonId: string;
   status: ClientStatus;
   activeContract: Contract | null;
-  isPublic: boolean;
 }) {
   const [value, setValue] = useState<ClientStatus>(status);
   const [pending, startTransition] = useTransition();
   const [cascadeOpen, setCascadeOpen] = useState(false);
   const [alsoTerminate, setAlsoTerminate] = useState(false);
-  const [alsoHide, setAlsoHide] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function applyStatus(next: ClientStatus, extra?: () => Promise<void>) {
@@ -72,7 +76,6 @@ export function ClientStatusSelect({
     if (next === "terminated") {
       // Never silent — confirm the cascade (docs/product-decisions.md).
       setAlsoTerminate(Boolean(activeContract));
-      setAlsoHide(isPublic);
       setError(null);
       setCascadeOpen(true);
       return;
@@ -85,7 +88,6 @@ export function ClientStatusSelect({
       if (alsoTerminate && activeContract) {
         await terminateContract(salonId, activeContract.id);
       }
-      if (alsoHide) await setVisibility(salonId, false);
     });
   }
 
@@ -133,21 +135,10 @@ export function ClientStatusSelect({
                 Also terminate the active contract (v{activeContract.version})
               </label>
             ) : null}
-            {isPublic ? (
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-brand"
-                  checked={alsoHide}
-                  onChange={(e) => setAlsoHide(e.target.checked)}
-                />
-                Also hide this salon from the app
-              </label>
-            ) : null}
-            {!activeContract && !isPublic ? (
+            {!activeContract ? (
               <p className="text-ink-muted">
-                No active contract, and the salon is already hidden — nothing
-                else to change.
+                No active contract — nothing else to change. Marketplace
+                visibility is not affected; use Suspend for moderation.
               </p>
             ) : null}
           </div>

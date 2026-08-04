@@ -72,15 +72,36 @@ export async function setClientStatus(salonId: string, status: ClientStatus) {
   revalidateSalon(salonId);
 }
 
-export async function setVisibility(salonId: string, isPublic: boolean) {
-  await requireSuperadmin();
+/**
+ * `RDY-008`: Moderation Suspension is an independent exceptional control for
+ * fraud, safety, legal, or marketplace-policy enforcement. Admin has no general
+ * publication switch: marketplace visibility is derived from owner publication
+ * intent, Publication Readiness, and entitlement, and a suspension overrides
+ * all three. Releasing a suspension restores the derived visibility rather than
+ * publishing the salon.
+ */
+export async function suspendSalonModeration(salonId: string, reason: string) {
+  const { userId } = await requireSuperadmin();
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase
-    .from("salons")
-    .update({ is_public: isPublic })
-    .eq("id", salonId);
+  const { error } = await supabase.rpc("suspend_salon_moderation", {
+    p_salon_id: salonId,
+    p_reason: reason.trim() === "" ? null : reason.trim(),
+    p_actor_user_id: userId,
+  });
 
-  if (error) throw new Error(`setVisibility: ${error.message}`);
+  if (error) throw new Error(`suspendSalonModeration: ${error.message}`);
+  revalidateSalon(salonId);
+}
+
+export async function releaseSalonModeration(salonId: string) {
+  const { userId } = await requireSuperadmin();
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.rpc("release_salon_moderation", {
+    p_salon_id: salonId,
+    p_actor_user_id: userId,
+  });
+
+  if (error) throw new Error(`releaseSalonModeration: ${error.message}`);
   revalidateSalon(salonId);
 }
 

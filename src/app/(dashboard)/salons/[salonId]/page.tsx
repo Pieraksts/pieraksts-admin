@@ -68,9 +68,8 @@ export default async function SalonDetailPage(
           salonId={salon.id}
           status={salon.clientStatus}
           activeContract={salon.activeContract}
-          isPublic={salon.isPublic}
         />
-        <VisibilityToggle salonId={salon.id} isPublic={salon.isPublic} />
+        <VisibilityToggle salonId={salon.id} visibility={salon.visibility} />
         <FeaturedToggle salonId={salon.id} isFeatured={salon.isFeatured} />
         <span aria-hidden>·</span>
         <span>{salon.city}</span>
