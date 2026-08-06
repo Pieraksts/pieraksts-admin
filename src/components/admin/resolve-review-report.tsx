@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { CheckCircle } from "@phosphor-icons/react";
+import { CheckCircle, Warning } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,11 +13,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { resolveReviewModerationCase } from "@/lib/actions/review-moderation";
 
+const NOTE_MAX_LENGTH = 500;
+
 /**
- * Resolve a reported review case. Closes the moderation case only — never
- * deletes or edits the underlying salon review.
+ * `REV-003`. Resolve a reported review case. This closes the moderation case
+ * and nothing else — it never deletes, hides, or edits the underlying salon
+ * review, and the dialog says so before the moderator commits.
+ *
+ * The action is awaited inside `startTransition`, so `pending` stays true for
+ * the whole server round trip, including the `revalidatePath` re-render.
  */
 export function ResolveReviewReport({
   caseId,
@@ -39,7 +47,10 @@ export function ResolveReviewReport({
         setOpen(false);
         setNote("");
       } catch {
-        setError("Could not resolve. Please try again.");
+        // The dialog stays open so the note survives and the failure is visible.
+        setError(
+          "Could not resolve this case. Nothing was changed — check your connection and try again.",
+        );
       }
     });
   }
@@ -54,40 +65,55 @@ export function ResolveReviewReport({
         disabled={pending}
       >
         <CheckCircle size={14} weight="duotone" data-icon="inline-start" />
-        Resolve
+        {pending ? "Resolving…" : "Resolve"}
       </Button>
 
       <Dialog
         open={open}
         onOpenChange={(next) => {
-          if (!next) {
-            setOpen(false);
-            setError(null);
-          }
+          // Never let a backdrop click abandon an in-flight transition.
+          if (pending) return;
+          setOpen(next);
+          if (!next) setError(null);
         }}
       >
-        <DialogContent>
+        <DialogContent showCloseButton={!pending}>
           <DialogHeader>
             <DialogTitle>Resolve this report?</DialogTitle>
             <DialogDescription>
-              Marks the report for {salonName} as reviewed. The review itself is
-              not deleted or changed — only the moderation case is closed.
+              Marks the report for {salonName} as reviewed. This closes the
+              moderation case only — the review stays published exactly as the
+              client wrote it, and is not deleted, hidden, or edited.
             </DialogDescription>
           </DialogHeader>
 
-          <label className="grid gap-1.5 text-[14px] text-foreground">
-            Resolution note (optional)
-            <input
-              type="text"
-              className="rounded-md border border-border px-2.5 py-1.5"
+          <div className="grid gap-1.5">
+            <Label htmlFor={`resolution-note-${caseId}`}>
+              Resolution note (optional)
+            </Label>
+            <Textarea
+              id={`resolution-note-${caseId}`}
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(event) => setNote(event.target.value)}
+              disabled={pending}
+              maxLength={NOTE_MAX_LENGTH}
+              rows={3}
               placeholder="e.g. Reviewed; no action needed"
             />
-          </label>
+            <p className="text-[12px] text-ink-soft">
+              Saved on the case for the audit trail.
+            </p>
+          </div>
 
           {error ? (
-            <p className="text-[13px] text-destructive">{error}</p>
+            <p
+              role="alert"
+              aria-live="assertive"
+              className="flex items-start gap-1.5 rounded-lg bg-destructive/10 px-2.5 py-2 text-[13px] leading-5 text-destructive"
+            >
+              <Warning size={15} weight="duotone" className="mt-0.5 shrink-0" />
+              {error}
+            </p>
           ) : null}
 
           <DialogFooter>
@@ -96,8 +122,13 @@ export function ResolveReviewReport({
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="button" onClick={submit} disabled={pending}>
-              Resolve report
+            <Button
+              type="button"
+              onClick={submit}
+              disabled={pending}
+              aria-busy={pending}
+            >
+              {pending ? "Resolving…" : "Resolve report"}
             </Button>
           </DialogFooter>
         </DialogContent>
