@@ -151,7 +151,10 @@ export default async function ReviewReportsPage({
               }
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-colors",
+                // 44×44 minimum touch target: these chips are the only way to
+                // change what the queue shows, so they must be reachable on a
+                // touch screen, not just with a pointer.
+                "inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border px-4 text-[13px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
                 isActive
                   ? "border-brand-muted bg-brand-soft text-brand-strong"
                   : "border-hairline text-ink-muted hover:bg-warm-strong",

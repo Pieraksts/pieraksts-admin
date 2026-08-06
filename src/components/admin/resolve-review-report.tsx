@@ -61,6 +61,10 @@ export function ResolveReviewReport({
         type="button"
         variant="outline"
         size="sm"
+        // The default control sizes sit under the 44×44 touch-target contract,
+        // so the moderation actions raise it locally rather than resizing every
+        // button in Admin.
+        className="min-h-11 px-3.5"
         onClick={() => setOpen(true)}
         disabled={pending}
       >
@@ -118,12 +122,13 @@ export function ResolveReviewReport({
 
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" disabled={pending}>
+              <Button variant="outline" className="min-h-11 px-4" disabled={pending}>
                 Cancel
               </Button>
             </DialogClose>
             <Button
               type="button"
+              className="min-h-11 px-4"
               onClick={submit}
               disabled={pending}
               aria-busy={pending}

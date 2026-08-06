@@ -52,7 +52,12 @@ export default function ReviewReportsError({
             </p>
           ) : null}
         </div>
-        <Button type="button" onClick={() => unstable_retry()}>
+        {/* The only way out of this state, so it meets the 44×44 minimum. */}
+        <Button
+          type="button"
+          className="min-h-11 px-4"
+          onClick={() => unstable_retry()}
+        >
           Try again
         </Button>
       </div>
