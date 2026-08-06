@@ -1,5 +1,5 @@
 import type { Icon } from "@phosphor-icons/react";
-import { Buildings, GridFour, Receipt } from "@phosphor-icons/react/dist/ssr";
+import { Buildings, Flag, GridFour, Receipt } from "@phosphor-icons/react/dist/ssr";
 
 export type NavItem = {
   label: string;
@@ -12,6 +12,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Overview", href: "/", icon: GridFour, exact: true },
   { label: "Salons", href: "/salons", icon: Buildings },
+  { label: "Review reports", href: "/review-reports", icon: Flag },
   { label: "Invoices", href: "/invoices", icon: Receipt },
 ];
 
