@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   CheckCircle,
-  FilePlus,
+  CreditCard,
   FileText,
   IdentificationCard,
   Receipt,
@@ -11,7 +11,6 @@ import {
 
 import { ClientStatusSelect } from "@/components/admin/client-status-select";
 import { ContractActions } from "@/components/admin/contract-actions";
-import { GenerateInvoice } from "@/components/admin/generate-invoice";
 import { InvoiceActions } from "@/components/admin/invoice-actions";
 import { LegalProfileDialog } from "@/components/admin/legal-profile-dialog";
 import { PageHeader } from "@/components/admin/page-header";
@@ -19,7 +18,6 @@ import { EmptyState, Field, Section, Th } from "@/components/admin/section";
 import { FeaturedToggle } from "@/components/admin/featured-toggle";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { VisibilityToggle } from "@/components/admin/visibility-toggle";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -27,18 +25,34 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { SUPPLIER, SUPPLIER_VAT_RATE_BPS } from "@/lib/config/supplier";
 import type { BookingFee } from "@/lib/data/salons";
 import { getSalon } from "@/lib/data/salons";
+import type { SalonSubscriptionStatus } from "@/lib/data/subscriptions";
+import {
+  formatSubscriptionAmount,
+  getSalonSubscription,
+} from "@/lib/data/subscriptions";
 import { formatDate, formatMoney, formatRate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+
+const SUBSCRIPTION_STATUS_LABEL: Record<SalonSubscriptionStatus, string> = {
+  none: "No",
+  "pending-payment-method": "Awaiting payment method",
+  trialing: "Free Trial",
+  active: "Active",
+  grace: "Billing Grace",
+  ended: "Ended",
+};
 
 export default async function SalonDetailPage(
   props: PageProps<"/salons/[salonId]">,
 ) {
   const { salonId } = await props.params;
-  const salon = await getSalon(salonId);
+  const [salon, subscription] = await Promise.all([
+    getSalon(salonId),
+    getSalonSubscription(salonId),
+  ]);
   if (!salon) notFound();
 
   const uninvoicedFees = salon.bookingFees.filter((f) => !f.invoiced);
@@ -49,19 +63,7 @@ export default async function SalonDetailPage(
 
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader
-        backHref="/salons"
-        backLabel="Salons"
-        title={salon.name}
-        actions={
-          <Button asChild>
-            <Link href={`/salons/${salon.id}/contract/new`}>
-              <FilePlus size={16} weight="bold" data-icon="inline-start" />
-              New contract
-            </Link>
-          </Button>
-        }
-      />
+      <PageHeader backHref="/salons" backLabel="Salons" title={salon.name} />
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-[14px] text-ink-muted">
         <ClientStatusSelect
@@ -73,19 +75,89 @@ export default async function SalonDetailPage(
         <FeaturedToggle salonId={salon.id} isFeatured={salon.isFeatured} />
         <span aria-hidden>·</span>
         <span>{salon.city}</span>
-        {salon.activeContract ? (
-          <>
-            <span aria-hidden>·</span>
-            <span>
-              {formatRate(salon.activeContract.commissionRateBps)} commission
-            </span>
-          </>
-        ) : null}
         <span aria-hidden>·</span>
-        <span className="font-mono tabular-nums">
-          {formatMoney(salon.uninvoiced)} uninvoiced
+        <span>
+          {subscription
+            ? `${SUBSCRIPTION_STATUS_LABEL[subscription.subscriptionStatus]} subscription`
+            : "No subscription"}
         </span>
       </div>
+
+      {/* SUB-1: provider-neutral entitlement. Read-only — Admin cannot grant,
+          cancel, or repair a Business Subscription, and there is no Stripe
+          admin here. Entitlement changes only from verified provider events. */}
+      <Section title="Business Subscription">
+        {!subscription || subscription.subscriptionStatus === "none" ? (
+          <EmptyState
+            icon={CreditCard}
+            title="Not subscribed yet"
+            description="This Salon has not activated a Business Subscription. It stays hidden from the marketplace until a verified provider event grants entitlement."
+          />
+        ) : (
+          <dl className="grid gap-x-8 gap-y-5 px-5 py-5 sm:grid-cols-2">
+            <Field
+              label="Subscription status"
+              value={SUBSCRIPTION_STATUS_LABEL[subscription.subscriptionStatus]}
+            />
+            <Field
+              label="Entitlement"
+              value={
+                subscription.isDevelopmentAccess
+                  ? "Development Access (test-only)"
+                  : (subscription.entitlementStatus ?? "None")
+              }
+            />
+            <Field label="Offer version" value={subscription.offerVersion} />
+            <Field
+              label="Monthly total"
+              value={formatSubscriptionAmount(
+                subscription.totalAmount,
+                subscription.currency,
+              )}
+            />
+            <Field
+              label="Billable Specialists"
+              value={`${subscription.billableSpecialistQuantity} (${subscription.includedBillableSpecialists ?? 0} included, ${formatSubscriptionAmount(subscription.additionalSpecialistPriceAmount, subscription.currency)} each extra)`}
+            />
+            <Field
+              label="Payment method on file"
+              value={subscription.paymentMethodOnFile ? "Yes" : "No"}
+            />
+            <Field
+              label="Trial ends"
+              value={
+                subscription.trialEndsAt
+                  ? formatDate(subscription.trialEndsAt)
+                  : null
+              }
+            />
+            <Field
+              label="Period ends"
+              value={
+                subscription.currentPeriodEndsAt
+                  ? formatDate(subscription.currentPeriodEndsAt)
+                  : null
+              }
+            />
+            <Field
+              label="Cancellation effective"
+              value={
+                subscription.cancellationEffectiveAt
+                  ? formatDate(subscription.cancellationEffectiveAt)
+                  : null
+              }
+            />
+            <Field
+              label="Billing Grace ends"
+              value={
+                subscription.graceEndsAt
+                  ? formatDate(subscription.graceEndsAt)
+                  : null
+              }
+            />
+          </dl>
+        )}
+      </Section>
 
       {/* Legal profile */}
       <Section
@@ -128,13 +200,13 @@ export default async function SalonDetailPage(
         )}
       </Section>
 
-      {/* Contracts */}
-      <Section title="Contract history">
+      {/* Retired commission contracts, kept readable as history (SUB-1). */}
+      <Section title="Contract history (retired)">
         {salon.contracts.length === 0 ? (
           <EmptyState
             icon={FileText}
-            title="No contracts yet"
-            description="Draft the first versioned contract with “New contract” above. Billing starts once one is active."
+            title="No contracts"
+            description="Commission contracts are retired. This Salon is billed through its Business Subscription above."
           />
         ) : (
           <Table className="[&_td]:py-3">
@@ -167,11 +239,7 @@ export default async function SalonDetailPage(
                     <StatusBadge status={c.status} />
                   </TableCell>
                   <TableCell className="pr-5 text-right">
-                    <ContractActions
-                      salonId={salon.id}
-                      contract={c}
-                      activeContract={salon.activeContract}
-                    />
+                    <ContractActions salonId={salon.id} contract={c} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -180,30 +248,23 @@ export default async function SalonDetailPage(
         )}
       </Section>
 
-      {/* Uninvoiced booking fees, grouped by month so stragglers stay visible */}
+      {/* Legacy commission fees. SUB-1 retired invoice generation, so these are
+          history only — no new commission invoice can be issued. */}
       <Section
-        title="Uninvoiced fees"
+        title="Uninvoiced fees (retired)"
         action={
-          <div className="flex items-center gap-3">
-            {uninvoicedFees.length > 0 ? (
-              <span className="font-mono text-[13px] tabular-nums text-ink-muted">
-                {formatMoney(uninvoicedTotal)}
-              </span>
-            ) : null}
-            <GenerateInvoice
-              salonId={salon.id}
-              uninvoicedFees={uninvoicedFees}
-              vatRateBps={SUPPLIER_VAT_RATE_BPS}
-              vatRegistered={SUPPLIER.vatRegistered}
-            />
-          </div>
+          uninvoicedFees.length > 0 ? (
+            <span className="font-mono text-[13px] tabular-nums text-ink-muted">
+              {formatMoney(uninvoicedTotal)}
+            </span>
+          ) : null
         }
       >
         {uninvoicedFees.length === 0 ? (
           <EmptyState
             icon={CheckCircle}
-            title="All caught up"
-            description="No fees waiting to be invoiced. New ones appear here as bookings complete under an active contract."
+            title="Nothing outstanding"
+            description="Commission fees are retired. This Salon is billed through its Business Subscription."
           />
         ) : (
           <Table className="[&_td]:py-3">

@@ -18,7 +18,6 @@
 import { revalidatePath } from "next/cache";
 
 import { requireSuperadmin } from "@/lib/auth/require-superadmin";
-import { SUPPLIER_VAT_RATE_BPS } from "@/lib/config/supplier";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Refresh every view that surfaces an invoice or its salon. */
@@ -30,48 +29,16 @@ function revalidateInvoices(salonId: string, invoiceId?: string) {
   revalidatePath("/");
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * Generate a draft invoice for a salon over [periodStart, periodEnd] (a calendar
- * month, supplied by the UI). Raises `INVOICE_NO_FEES` when the month has no
- * uninvoiced fees — there are never €0 invoices. Returns the new invoice id.
+/*
+ * `SUB-1` retired commission invoicing as the launch commercial path, so
+ * `generateInvoice` is gone. Booking-fee commission invoices belong to the
+ * contract model the Business Subscription replaces; issuing one now would
+ * bill a Salon twice under two different commercial truths.
+ *
+ * The existing lifecycle actions below stay so already-issued invoices can be
+ * settled or cancelled. `BOOST-1` owns the future commission ledger and will
+ * charge it as off-session PaymentIntents, never as an invoice generated here.
  */
-export async function generateInvoice(
-  salonId: string,
-  periodStart: string,
-  periodEnd: string,
-): Promise<{ id: string }> {
-  if (!ISO_DATE.test(periodStart) || !ISO_DATE.test(periodEnd)) {
-    throw new Error("generateInvoice: invalid period");
-  }
-  if (periodEnd < periodStart) {
-    throw new Error("generateInvoice: end before start");
-  }
-
-  await requireSuperadmin();
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .rpc("generate_salon_invoice", {
-      p_salon_id: salonId,
-      p_period_start: periodStart,
-      p_period_end: periodEnd,
-      p_vat_rate_bps: SUPPLIER_VAT_RATE_BPS,
-    })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (error) {
-    // Surface the DB's domain errors verbatim so the UI can react to them.
-    if (error.message.includes("INVOICE_NO_FEES")) {
-      throw new Error("INVOICE_NO_FEES");
-    }
-    throw new Error(`generateInvoice: ${error.message}`);
-  }
-
-  revalidateInvoices(salonId, data.id);
-  return { id: data.id };
-}
 
 /** Stamp an invoice as sent (only from draft). Due = sent_at + term. */
 export async function markInvoiceSent(invoiceId: string, salonId: string) {

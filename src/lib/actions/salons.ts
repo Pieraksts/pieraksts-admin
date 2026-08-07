@@ -161,133 +161,23 @@ export async function saveLegalProfile(
   revalidatePath(`/salons/${salonId}`);
 }
 
-export type NewContractInput = {
-  commissionRateBps: number;
-  startDate: string;
-  endDate: string | null;
-  status: "draft" | "pending_signature";
-};
-
-export async function createContract(salonId: string, input: NewContractInput) {
-  const { userId } = await requireSuperadmin();
-  if (
-    !Number.isInteger(input.commissionRateBps) ||
-    input.commissionRateBps < 0 ||
-    input.commissionRateBps > 10000
-  ) {
-    throw new Error("createContract: commission rate out of range");
-  }
-  if (!input.startDate) throw new Error("createContract: start date required");
-  if (input.endDate && input.endDate < input.startDate) {
-    throw new Error("createContract: end date before start date");
-  }
-
-  const supabase = getSupabaseAdmin();
-
-  // Gate: legal profile must be complete (docs/product-decisions.md).
-  const { data: legal, error: legalError } = await supabase
-    .from("salon_legal_profiles")
-    .select("company_name, registration_number, legal_address, contact_person")
-    .eq("salon_id", salonId)
-    .maybeSingle();
-  if (legalError) throw new Error(`createContract: ${legalError.message}`);
-  const complete =
-    legal?.company_name &&
-    legal?.registration_number &&
-    legal?.legal_address &&
-    legal?.contact_person;
-  if (!complete) throw new Error("LEGAL_PROFILE_INCOMPLETE");
-
-  // Next version (contracts are versioned, never overwritten).
-  const { data: latest, error: versionError } = await supabase
-    .from("salon_contracts")
-    .select("version")
-    .eq("salon_id", salonId)
-    .order("version", { ascending: false })
-    .limit(1);
-  if (versionError) throw new Error(`createContract: ${versionError.message}`);
-  const nextVersion = (latest?.[0]?.version ?? 0) + 1;
-
-  const { data: created, error } = await supabase
-    .from("salon_contracts")
-    .insert({
-      salon_id: salonId,
-      version: nextVersion,
-      commission_rate_bps: input.commissionRateBps,
-      start_date: input.startDate,
-      end_date: input.endDate,
-      status: input.status,
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(`createContract: ${error.message}`);
-
-  await logContractEvent(supabase, created.id, "created", userId, {
-    description: `Created v${nextVersion} at ${input.commissionRateBps} bps`,
-  });
-
-  revalidateSalon(salonId);
-}
-
-/** YYYY-MM-DD one day before the given ISO date. */
-function isoDayBefore(iso: string): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-/**
- * Activate a contract. Enforces the app-level "exactly one active contract"
- * invariant: any other active contract is auto-terminated, and if its end_date
- * was open it's closed the day before this contract starts
- * (docs/product-decisions.md → Contracts).
+/*
+ * `SUB-1` retired the commission/contract model as the launch commercial path.
+ *
+ * The launch commercial relationship is the provider-neutral Business
+ * Subscription: a versioned Subscription Offer, a per-Salon entitlement, and
+ * verified provider events as the only entitlement mutators. Running a
+ * contract-commission model beside it would give a Salon two contradictory
+ * commercial truths, so the two mutations that could start one —
+ * `createContract` and `activateContract` — are gone.
+ *
+ * Existing contracts stay readable as history, and `terminateContract` remains
+ * so a legacy contract can be wound down. Admin has no path to grant, cancel,
+ * or repair a Business Subscription: see `src/lib/data/subscriptions.ts` for
+ * the read-only support view.
+ *
+ * `BOOST-1` owns the future commission ledger. It is not this model.
  */
-export async function activateContract(salonId: string, contractId: string) {
-  const { userId } = await requireSuperadmin();
-  const supabase = getSupabaseAdmin();
-
-  const { data: target, error: targetError } = await supabase
-    .from("salon_contracts")
-    .select("id, start_date")
-    .eq("id", contractId)
-    .eq("salon_id", salonId)
-    .maybeSingle();
-  if (targetError) throw new Error(`activateContract: ${targetError.message}`);
-  if (!target) throw new Error("activateContract: contract not found");
-
-  const { data: priorActive, error: priorError } = await supabase
-    .from("salon_contracts")
-    .select("id, end_date")
-    .eq("salon_id", salonId)
-    .eq("status", "active")
-    .neq("id", contractId);
-  if (priorError) throw new Error(`activateContract: ${priorError.message}`);
-
-  for (const prior of priorActive ?? []) {
-    const update: { status: string; end_date?: string } = {
-      status: "terminated",
-    };
-    if (prior.end_date == null) update.end_date = isoDayBefore(target.start_date);
-    const { error } = await supabase
-      .from("salon_contracts")
-      .update(update)
-      .eq("id", prior.id);
-    if (error) throw new Error(`activateContract (terminate prior): ${error.message}`);
-    await logContractEvent(supabase, prior.id, "terminated", userId, {
-      description: "Auto-terminated: superseded by a newly activated contract",
-    });
-  }
-
-  const { error } = await supabase
-    .from("salon_contracts")
-    .update({ status: "active" })
-    .eq("id", contractId);
-  if (error) throw new Error(`activateContract: ${error.message}`);
-
-  await logContractEvent(supabase, contractId, "activated", userId);
-
-  revalidateSalon(salonId);
-}
 
 export async function terminateContract(salonId: string, contractId: string) {
   const { userId } = await requireSuperadmin();
