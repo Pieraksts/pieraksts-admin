@@ -1,0 +1,21 @@
+---
+description: Controlled-MVP Admin pause — do not maintain Admin during migration
+alwaysApply: true
+---
+
+# pieraksts-admin is paused for controlled-MVP migration
+
+Do **not** implement, refactor, typecheck-gate, or “catch up” this repository
+as part of remaining controlled-MVP slices (`SUB-1`, `PAY-1`, `BOOST-1`,
+`OFF-1`, or related repairs).
+
+- Leave existing Admin code in place; do not delete it.
+- Stale Admin UI relative to Backend / Business / Client is expected.
+- Core delivery path is Backend, Business, Client (+ Web for Pay).
+- Admin rebuild (moderation, Complimentary Boost grant UI, catalog controls)
+  happens in a later dedicated effort after the core migration.
+- Only work here when the user explicitly re-includes Admin for this session.
+
+Authoritative pause: Business
+`docs/product/controlled-mvp-delivery-map.md` and
+`.agents/skills/prepare-pieraksts-slice/SKILL.md`.
