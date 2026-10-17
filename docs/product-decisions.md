@@ -23,8 +23,17 @@ authoritative "why" for the admin panel's behaviour. Pairs with:
   still pending; see "Going live" below.
 - **Contract status** — `salon_contracts.status`
   (`draft → pending_signature → signed → active → terminated`). Drives billing.
-- **Marketplace visibility** — `salons.is_public`. Whether the salon shows in the
-  booking app. Separate from client status.
+- **Marketplace visibility** — **derived**, never a stored writable flag
+  (`RDY-1`). The `public.salon_visibility` view computes it from owner
+  publication intent + Publication Readiness + entitlement + Moderation
+  Suspension. Separate from client status. See "Marketplace visibility
+  (derived)" below.
+- **Publication Readiness** — the server-computed check that a salon is
+  complete enough to be public (profile, services, working hours, specialists,
+  legal/billing details, marketplace terms, entitlement). Zero blockers = ready.
+- **Moderation Suspension** — Pieraksts's own exceptional override (fraud,
+  safety, legal, marketplace policy). The only visibility-related control Admin
+  holds.
 
 ## Salon list
 
@@ -32,10 +41,11 @@ authoritative "why" for the admin panel's behaviour. Pairs with:
   admin profile. Salons with no admin-profile row show as **New** (the table
   default).
 - **No "Add salon" action.** Salons self-register in the app; the admin only
-  *controls* a salon's status, contracts, invoices, visibility — it never
+  *controls* a salon's status, contracts, invoices, and moderation — it never
   creates salons. (The stubbed "Add salon" button is removed.)
 - Whole row is clickable → salon detail.
-- Columns include a **visibility indicator** (Public / Hidden).
+- Columns include a **derived visibility indicator** (Public / Hidden by owner /
+  Setup incomplete / No subscription / Suspended) — read-only.
 - Search / status filter: **later** (trivial at current volume).
 
 ## Overview
@@ -64,46 +74,101 @@ Body below the cards = **two panels**, replacing the old "Needs attention":
 - `client_status` is therefore **informational/CRM**; the **contract is the
   billing switch**.
 - When terminating a client, **prompt**: "Also terminate the active contract?"
-  and "Also hide this salon from the app?" — never silent.
+  — never silent. **Revised by `RDY-1`:** the companion "Also hide this salon
+  from the app?" prompt is **gone**. Terminating a client is a commercial
+  decision, not a moderation action, and Admin no longer has a publication
+  write to perform. If a salon must come off the marketplace, that is a
+  Moderation Suspension with a recorded reason.
 
-## Marketplace visibility (is_public)
+## Marketplace visibility (derived)
 
-- This panel **does** control visibility. `salons.is_public` is
-  `boolean not null default true` and is the real gate the app's public queries
-  read.
-- **Public / Hidden toggle** on the salon detail header; indicator on the list.
-- **Caveat (surface in UI):** `is_public` is also the salon owner's own control,
-  so admin toggling is an **override** — last writer wins; an owner could
-  re-publish. A hard lock (owner *cannot* re-show) would be a separate
-  `admin_hidden` flag — **future, not now**.
+**Revised by `RDY-1`** (backend migration
+`pieraksts-backend/supabase/migrations/20260804120000_rdy_1_setup_home_readiness_visibility_development_access.sql`).
+The writable `salons.is_public` switch is **dropped**. Visibility is no longer
+something anyone sets — it is *computed* from four durable facts:
+
+1. **Owner publication intent** — `salon_publication_states.owner_intent`
+   (`published` / `hidden`). Only the salon owner sets this, through the
+   business app; Admin has no write path to it.
+2. **Publication Readiness** — zero blockers from `salon_readiness_blockers()`
+   (display name, location, public contact phone, a bookable service, a full
+   week of salon working hours, a specialist with a service assignment and a
+   bookable window, complete legal/billing details, accepted marketplace terms,
+   and an entitlement).
+3. **Entitlement** — a `salon_entitlements` row that is `trialing` or `active`
+   and not revoked.
+4. **Moderation Suspension** — an open `salon_moderation_suspensions` row.
+
+`public.salon_visibility` is the single canonical definition every public
+projection and RLS policy consults. It resolves to one of **five states**, in
+this precedence order:
+
+| State | Meaning |
+| --- | --- |
+| `suspended` | Pieraksts moderation has suspended the salon. Overrides everything below — readiness and payment cannot lift it. |
+| `owner-hidden` | Ready and entitled, but the owner chose not to publish. |
+| `no-entitlement` | No trialing/active entitlement. |
+| `not-ready` | Publication Readiness has outstanding blockers. |
+| `published` | Owner intends to publish, readiness is satisfied, no suspension. Marketplace-visible. |
+
+(Entitlement is also one of the readiness blockers — `entitlement_missing` —
+so `not-ready` and `no-entitlement` overlap in the data. The state machine
+reports the entitlement case separately because it's the one the owner fixes
+by paying rather than by finishing setup.)
+
+### What Admin does with it
+
+- **Admin has no publication switch.** The old Public/Hidden toggle and its
+  `setVisibility` direct write are gone. `setVisibility` is replaced by
+  `suspendSalonModeration` / `releaseSalonModeration`, which call the
+  `suspend_salon_moderation` / `release_salon_moderation` RPCs — the only
+  visibility-adjacent writes Admin is granted.
+- The derived state is **read-only** in the UI: the salon detail header and the
+  list column render the label for `visibility.state`, plus the underlying
+  `isReady` / `isEntitled` / `isModerationSuspended` facts. Admin reads them
+  through one call, `get_admin_salon_visibility` — never a raw flag.
+- **Suspend** requires a reason, recorded for audit
+  (`salon_moderation_suspensions.reason` + `suspended_by_user_id`). The salon
+  drops off every public surface until released; existing bookings are
+  unaffected.
+- **Release restores the derived state — it does not publish.** After a
+  release the salon returns to whatever the other three facts say; a salon
+  that is owner-hidden, unready, or unentitled stays hidden.
+- This replaces the old "admin override, last writer wins" model *and* the
+  deferred `admin_hidden` hard-lock idea: suspension **is** the hard lock, and
+  no owner action can override it.
 
 ## Going live (visibility gate)
 
-**Decided 2026-06-14:** a salon must have an **active contract before it appears
-in the marketplace** — "sign before live". Chosen over a free-trial model as the
-simpler option now; a trial is deferred as a later growth lever that can layer on
-top of this gate (trial = "count as live without a contract until date X").
+**Superseded by `RDY-1`.** The gate is now **entitlement + readiness**, not an
+active contract. A salon goes live when the owner publishes it, Publication
+Readiness has no blockers, and a `trialing`/`active` entitlement exists. Both a
+trial and a paid subscription therefore satisfy the gate, so the trial no longer
+has to be layered on top of a contract check.
 
-- **Rule:** public visibility = `is_public = true` **AND** the salon has an active
-  contract (`resolve_active_salon_contract` returns a row). The contract
-  requirement must live in the **public marketplace query**, *not* in `is_public`
-  alone — `is_public` is also the salon owner's own toggle, so an `is_public`-only
-  gate is bypassable by the owner re-publishing. Enforcing it server-side closes
-  that loophole.
-- A newly self-registered salon is **registered but hidden** until you activate
-  its first contract. Visibility is the thing they sign for — this is the
-  conversion lever.
-- **In-app message:** the owner-facing app shows a clear notice to contract-less
-  salons that they must be **contacted by sales / sign a contract to go live**,
-  rather than being silently invisible. (Pieraksts-app UI.)
-- **Relationship to client status:** with this gate, **`new → active` tracks
-  "has an active contract."** Consider *deriving* the new/active distinction from
-  contract state rather than a separate manual toggle, leaving `paused` /
-  `terminated` as the only hand-set relationship overrides.
-- **Cross-repo / out of the current admin step:** the marketplace-query change and
-  the in-app message live in the **Pieraksts** repo; the `client_status`
-  rename/value change is a Pieraksts migration (check constraint + default) plus
-  admin-side type and `StatusBadge` updates.
+- A newly self-registered salon is **registered but hidden** until it finishes
+  setup and holds an entitlement. Readiness blockers each carry a `destination`
+  (`salon-profile`, `services`, `working-hours`, `specialists`, `activation`) so
+  the business app can route the owner to the exact thing to fix.
+- The gate is enforced **server-side in `public.salon_visibility`**, which every
+  public query and RLS policy consults. There is no client-writable flag to
+  bypass, which is what the original "don't put the gate in `is_public` alone"
+  concern was reaching for.
+- **Contracts still gate billing, not visibility.** `resolve_active_salon_contract`
+  remains the switch for whether a completed booking accrues a commission fee —
+  see "Client status ↔ billing". A salon can be publicly visible on a trial with
+  no active contract; it simply generates no fees.
+- **Development Access** (`grant_salon_development_access` /
+  `revoke_salon_development_access`) is the test-only, **per-salon** entitlement
+  source. There is deliberately no global "billing disabled" or "all salons
+  active" switch anywhere in the schema.
+- **Relationship to client status:** `client_status` stays commercial/CRM and is
+  hand-set; it is **not** an input to visibility. The earlier idea of deriving
+  `new → active` from contract state is unrelated to the visibility gate now.
+- **Cross-repo:** the derivation, the owner-facing publication RPCs, and the
+  in-app readiness messaging live in the **Pieraksts** / **pieraksts-backend**
+  repos. Admin only consumes `get_admin_salon_visibility` and the two moderation
+  RPCs.
 
 ## Contracts
 
@@ -187,16 +252,21 @@ top of this gate (trial = "count as live without a contract until date X").
 
 ## MVP scope vs later
 
-**MVP (build against real data):** salon list (all salons, status, visibility),
-overview (4 cards + recent invoices + salons), salon detail, client-status
-dropdown, visibility toggle, legal-profile edit, contract draft+versioning+PDF,
-contract activate/terminate with confirms, signed-PDF upload/download, monthly
-invoice generate (preview, VAT, numbering) + breakdown + PDF + sent/paid.
+**MVP (build against real data):** salon list (all salons, status, derived
+visibility), overview (4 cards + recent invoices + salons), salon detail,
+client-status dropdown, derived-visibility display + moderation
+suspend/release, legal-profile edit, contract draft+versioning+PDF, contract
+activate/terminate with confirms, signed-PDF upload/download, monthly invoice
+generate (preview, VAT, numbering) + breakdown + PDF + sent/paid.
 
 **Later:** auth (separate phase — its own doc), "this month" booking stats on
 detail, contract events timeline, salon notes (`salon_admin_profiles.notes`),
-list search/filter, hard-lock visibility (`admin_hidden`), active-bookers
-analytics.
+list search/filter, active-bookers analytics, surfacing the per-salon
+`readiness_blockers` list in Admin (the RPC already returns it; the UI only
+shows the summary state).
+
+The old "hard-lock visibility (`admin_hidden`)" item is **dropped** — `RDY-1`
+delivered it as Moderation Suspension.
 
 ## Required schema additions (in the `Pieraksts` repo)
 

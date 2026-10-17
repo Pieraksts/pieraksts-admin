@@ -120,8 +120,17 @@ Initial migration:
 - `created_at`
 - `updated_at`
 
-This status is separate from `salons.is_public`. Public marketplace visibility
-and Pieraksts commercial status are different concepts.
+This status is separate from marketplace visibility. Public marketplace
+visibility and Pieraksts commercial status are different concepts.
+
+**Revised by `RDY-1`:** visibility is no longer the writable `salons.is_public`
+flag (dropped). It is derived by `public.salon_visibility` from owner
+publication intent + Publication Readiness + entitlement + Moderation
+Suspension, and resolves to `published` / `owner-hidden` / `not-ready` /
+`no-entitlement` / `suspended`. Admin reads it via `get_admin_salon_visibility`
+and writes only moderation suspension/release — see
+[docs/product-decisions.md](docs/product-decisions.md) → "Marketplace visibility
+(derived)".
 
 ### Legal Profile
 

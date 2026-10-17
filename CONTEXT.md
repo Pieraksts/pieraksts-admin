@@ -12,12 +12,20 @@ behind a superadmin auth gate. Money is euros (`numeric(12,2)`) end-to-end.
 ## What the panel can do today
 
 **Salons**
-- [x] List every registered salon with client status + marketplace visibility
+- [x] List every registered salon with client status + derived marketplace
+      visibility
 - [x] Salon detail: status, visibility, legal profile, contracts, fees, invoices
 - [x] Set **client status** (`new → active → paused → terminated`), with a
-      cascade prompt on terminate (also end contract? also hide?)
-- [x] Toggle **marketplace visibility** (`is_public`) — admin override of the
-      owner's own toggle
+      cascade prompt on terminate (also end contract?)
+- [x] Show **derived marketplace visibility**, read-only — published /
+      hidden by owner / setup incomplete / no subscription / suspended. The
+      backend derives it from owner publication intent + Publication Readiness +
+      entitlement + Moderation Suspension (`RDY-1`); Admin has **no publication
+      switch** and the old writable `salons.is_public` flag is dropped
+- [x] **Suspend / release a salon (moderation)** — the independent exceptional
+      override for fraud, safety, legal, or policy enforcement. Suspending takes
+      a reason and is recorded for audit; releasing restores the derived state
+      rather than publishing the salon
 - [ ] No "add salon" — salons self-register in the app; admin only controls them
 
 **Contracts** (versioned, never overwritten)
