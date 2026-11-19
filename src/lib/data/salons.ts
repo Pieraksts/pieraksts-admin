@@ -8,8 +8,9 @@
  * Money is `numeric(12, 2)` **euros** throughout (matching the DB), not cents.
  *
  * Tables (see `Pieraksts/supabase/migrations/20260614120000_contract_billing_admin_foundation.sql`):
- * salons, salon_admin_profiles, salon_legal_profiles, salon_contracts,
- * booking_fees, salon_invoices, plus `profiles` for the app-user count.
+ * salons, salon_locations, salon_admin_profiles, salon_legal_profiles,
+ * salon_contracts, booking_fees, salon_invoices, plus `profiles` for the
+ * app-user count.
  */
 import { requireSuperadmin } from "@/lib/auth/require-superadmin";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -153,7 +154,6 @@ export type SalonSummary = {
   city: string;
   clientStatus: ClientStatus;
   visibility: SalonVisibility;
-  isFeatured: boolean;
   activeContract: Contract | null;
   uninvoiced: number;
   latestInvoiceStatus: InvoiceStatus | null;
@@ -183,12 +183,14 @@ const PAYMENT_TERM_DAYS = 14;
 
 type Numeric = number | string;
 
+// One-to-one; null until the owner saves an address.
 type SalonRow = {
   id: string;
   name: string;
-  city: string | null;
-  is_featured: boolean;
+  salon_locations: { exact_city: string } | null;
 };
+
+const SALON_COLUMNS = "id, name, salon_locations(exact_city)";
 
 type AdminSalonVisibilityRow = {
   salon_id: string;
@@ -421,7 +423,7 @@ export async function getSalons(): Promise<SalonSummary[]> {
     await Promise.all([
       supabase
         .from("salons")
-        .select("id, name, city, is_featured")
+        .select(SALON_COLUMNS)
         .order("name")
         .returns<SalonRow[]>(),
       // `RDY-1`: one canonical derived-visibility read, never the replaced flag.
@@ -493,10 +495,9 @@ export async function getSalons(): Promise<SalonSummary[]> {
   return salons.map((s) => ({
     id: s.id,
     name: s.name,
-    city: s.city ?? "",
+    city: s.salon_locations?.exact_city ?? "",
     clientStatus: statusBySalon.get(s.id) ?? "new",
     visibility: mapVisibility(visibilityBySalon.get(s.id)),
-    isFeatured: s.is_featured,
     activeContract: pickActiveContract(contractsBySalon.get(s.id) ?? []),
     uninvoiced: uninvoicedBySalon.get(s.id) ?? 0,
     latestInvoiceStatus: latestInvoiceBySalon.get(s.id) ?? null,
@@ -511,7 +512,7 @@ export async function getSalon(id: string): Promise<SalonDetail | null> {
     await Promise.all([
       supabase
         .from("salons")
-        .select("id, name, city, is_featured")
+        .select(SALON_COLUMNS)
         .eq("id", id)
         .maybeSingle()
         .returns<SalonRow>(),
@@ -581,12 +582,11 @@ export async function getSalon(id: string): Promise<SalonDetail | null> {
   return {
     id: salon.id,
     name: salon.name,
-    city: salon.city ?? "",
+    city: salon.salon_locations?.exact_city ?? "",
     clientStatus: (profileRes.data?.client_status as ClientStatus) ?? "new",
     visibility: mapVisibility(
       ((visibilityRes.data ?? []) as AdminSalonVisibilityRow[])[0],
     ),
-    isFeatured: salon.is_featured,
     activeContract: pickActiveContract(contracts),
     uninvoiced: bookingFees.reduce((sum, f) => sum + f.commissionAmount, 0),
     latestInvoiceStatus: invoices[0]?.status ?? null,
