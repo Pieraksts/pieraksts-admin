@@ -15,7 +15,6 @@ import { InvoiceActions } from "@/components/admin/invoice-actions";
 import { LegalProfileDialog } from "@/components/admin/legal-profile-dialog";
 import { PageHeader } from "@/components/admin/page-header";
 import { EmptyState, Field, Section, Th } from "@/components/admin/section";
-import { FeaturedToggle } from "@/components/admin/featured-toggle";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { VisibilityToggle } from "@/components/admin/visibility-toggle";
 import {
@@ -72,7 +71,6 @@ export default async function SalonDetailPage(
           activeContract={salon.activeContract}
         />
         <VisibilityToggle salonId={salon.id} visibility={salon.visibility} />
-        <FeaturedToggle salonId={salon.id} isFeatured={salon.isFeatured} />
         <span aria-hidden>·</span>
         <span>{salon.city}</span>
         <span aria-hidden>·</span>
