@@ -68,12 +68,14 @@ export default async function SalonsPage() {
                       href={`/salons/${salon.id}`}
                       className="-mx-1 flex flex-col gap-0.5 rounded-md px-1 py-3.5 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     >
-                      <span className="flex items-center gap-1.5 text-[14px] font-semibold text-foreground">
+                      <span className="text-[14px] font-semibold text-foreground">
                         {salon.name}
                       </span>
-                      <span className="text-[12px] text-ink-soft">
-                        {salon.city}
-                      </span>
+                      {salon.city ? (
+                        <span className="text-[12px] text-ink-soft">
+                          {salon.city}
+                        </span>
+                      ) : null}
                     </Link>
                   </TableCell>
                   <TableCell>

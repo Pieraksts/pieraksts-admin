@@ -8,8 +8,9 @@
  * Money is `numeric(12, 2)` **euros** throughout (matching the DB), not cents.
  *
  * Tables (see `Pieraksts/supabase/migrations/20260614120000_contract_billing_admin_foundation.sql`):
- * salons, salon_admin_profiles, salon_legal_profiles, salon_contracts,
- * booking_fees, salon_invoices, plus `profiles` for the app-user count.
+ * salons, salon_locations, salon_admin_profiles, salon_legal_profiles,
+ * salon_contracts, booking_fees, salon_invoices, plus `profiles` for the
+ * app-user count.
  */
 import { requireSuperadmin } from "@/lib/auth/require-superadmin";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -182,7 +183,7 @@ const PAYMENT_TERM_DAYS = 14;
 
 type Numeric = number | string;
 
-// PRF-1 moved the city to the one-to-one `salon_locations` row.
+// One-to-one; null until the owner saves an address.
 type SalonRow = {
   id: string;
   name: string;

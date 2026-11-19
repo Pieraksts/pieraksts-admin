@@ -71,8 +71,12 @@ export default async function SalonDetailPage(
           activeContract={salon.activeContract}
         />
         <VisibilityToggle salonId={salon.id} visibility={salon.visibility} />
-        <span aria-hidden>·</span>
-        <span>{salon.city}</span>
+        {salon.city ? (
+          <>
+            <span aria-hidden>·</span>
+            <span>{salon.city}</span>
+          </>
+        ) : null}
         <span aria-hidden>·</span>
         <span>
           {subscription

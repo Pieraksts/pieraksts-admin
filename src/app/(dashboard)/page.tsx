@@ -133,7 +133,9 @@ export default async function OverviewPage() {
                       <p className="truncate text-[14px] font-semibold text-foreground">
                         {salon.name}
                       </p>
-                      <p className="text-[12px] text-ink-soft">{salon.city}</p>
+                      {salon.city ? (
+                        <p className="text-[12px] text-ink-soft">{salon.city}</p>
+                      ) : null}
                     </div>
                     <StatusBadge status={salon.clientStatus} />
                   </Link>
